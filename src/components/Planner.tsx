@@ -251,7 +251,7 @@ export const Planner = () => {
       Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-flash-latest",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
