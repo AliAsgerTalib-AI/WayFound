@@ -2,9 +2,30 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, LucideIcon } from "lucide-react";
 import { GoogleGenAI, Type } from "@google/genai";
+import { auth, db } from "../lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
 
 // --- Types ---
+
+interface ItineraryDay {
+  day: number;
+  title: string;
+  activities: {
+    time: string;
+    activity: string;
+    location: string;
+    description: string;
+  }[];
+}
+
+interface ItineraryData {
+  title: string;
+  destination: string;
+  days: ItineraryDay[];
+  recommendations: string[];
+}
 
 interface TripDetails {
   origin: string;
@@ -214,13 +235,31 @@ export const Planner = () => {
   const [selectedDeliverables, setSelectedDeliverables] = useState<string[]>(["Main itinerary table"]);
   
   const [budgetBreakdown, setBudgetBreakdown] = useState<BudgetData | null>(null);
+  const [itinerary, setItinerary] = useState<ItineraryData | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isGeneratingBudget, setIsGeneratingBudget] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
+  const [user, setUser] = useState(auth.currentUser);
 
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const updateDetail = (key: keyof TripDetails, value: string | number) => {
     setDetails(prev => ({ ...prev, [key]: value }));
+  };
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
+    return () => unsubscribe();
+  }, []);
+
+  const handleSignIn = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      console.error("Sign in error:", err);
+    }
   };
 
   const generateBudgetBreakdown = async () => {
@@ -233,7 +272,7 @@ export const Planner = () => {
     setBudgetError(null);
     
     try {
-      const prompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
+      const budgetPrompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
       Trip Details:
       - Duration: ${details.duration} days
       - Travel Style: ${selectedTravelStyles.join(", ")}
@@ -249,7 +288,7 @@ export const Planner = () => {
       
       Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
 
-      const schema = {
+      const budgetSchema = {
         type: Type.OBJECT,
         properties: {
           totalTripEstimate: { type: Type.NUMBER },
@@ -276,22 +315,173 @@ export const Planner = () => {
         required: ["totalTripEstimate", "currency", "categories", "summary"]
       };
 
-      const response = await fetch("/api/generate-budget", {
+      const budgetResponse = await fetch("/api/generate-budget", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, schema })
+        body: JSON.stringify({ prompt: budgetPrompt, schema: budgetSchema })
       });
 
-      if (!response.ok) throw new Error("Server proxy failed");
-
-      const data = await response.json();
-      setBudgetBreakdown(data);
-    } catch (error) {
-      console.error("Error generating budget:", error);
+      if (!budgetResponse.ok) throw new Error("Budget generation failed");
+      const budgetData = await budgetResponse.json();
+      setBudgetBreakdown(budgetData);
+    } catch (err) {
+      console.error("Budget generation error:", err);
       setBudgetError("Failed to generate budget. Please try again.");
     } finally {
       setIsGeneratingBudget(false);
     }
+  };
+
+  const generateJourney = async () => {
+    if (!details.destination) {
+      setError("Please enter a destination first.");
+      return;
+    }
+    
+    setIsGenerating(true);
+    setError(null);
+    
+    try {
+      // 1. Generate Budget
+      const budgetPrompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
+      Trip Details:
+      - Duration: ${details.duration} days
+      - Travel Style: ${selectedTravelStyles.join(", ")}
+      - Number of Travelers: ${details.numTravelers}
+      - Total Budget Goal: $${details.budgetAmount}
+      
+      Provide realistic estimates for:
+      1. Accommodation
+      2. Food & Drink
+      3. Transportation (local)
+      4. Activities & Sightseeing
+      5. Miscellaneous (SIM cards, tips, etc.)
+      
+      Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
+
+      const budgetSchema = {
+        type: Type.OBJECT,
+        properties: {
+          totalTripEstimate: { type: Type.NUMBER },
+          currency: { type: Type.STRING },
+          summary: { type: Type.STRING },
+          categories: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                category: { type: Type.STRING },
+                dailyEstimate: { type: Type.NUMBER },
+                totalEstimate: { type: Type.NUMBER },
+                description: { type: Type.STRING },
+                icon: { 
+                  type: Type.STRING,
+                  enum: ["home", "food", "transport", "activities", "other"]
+                }
+              },
+              required: ["category", "dailyEstimate", "totalEstimate", "description", "icon"]
+            }
+          }
+        },
+        required: ["totalTripEstimate", "currency", "categories", "summary"]
+      };
+
+      const budgetResponse = await fetch("/api/generate-budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: budgetPrompt, schema: budgetSchema })
+      });
+
+      if (!budgetResponse.ok) throw new Error("Budget generation failed");
+      const budgetData = await budgetResponse.json();
+      setBudgetBreakdown(budgetData);
+
+      // 2. Generate Itinerary
+      const itineraryPrompt = `Generate a bespoke travel itinerary for a ${details.duration}-day trip to ${details.destination}.
+      Context:
+      - Travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")})
+      - Interests: ${selectedInterests.join(", ")}
+      - Travel Style: ${selectedTravelStyles.join(", ")}
+      - Accommodation: ${details.accommodationType}
+      - Avoid: ${details.avoidText}
+      - Deliverables: ${selectedDeliverables.join(", ")}
+      
+      Create a day-by-day plan that feels intentional and well-paced.`;
+
+      const itinerarySchema = {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          destination: { type: Type.STRING },
+          days: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                day: { type: Type.NUMBER },
+                title: { type: Type.STRING },
+                activities: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      time: { type: Type.STRING },
+                      activity: { type: Type.STRING },
+                      location: { type: Type.STRING },
+                      description: { type: Type.STRING }
+                    },
+                    required: ["time", "activity", "location", "description"]
+                  }
+                }
+              },
+              required: ["day", "title", "activities"]
+            }
+          },
+          recommendations: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING }
+          }
+        },
+        required: ["title", "destination", "days"]
+      };
+
+      const itineraryResponse = await fetch("/api/generate-budget", { // Reusing the same proxy endpoint
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: itineraryPrompt, schema: itinerarySchema })
+      });
+
+      if (!itineraryResponse.ok) throw new Error("Itinerary generation failed");
+      const itineraryData = await itineraryResponse.json();
+      setItinerary(itineraryData);
+
+      // 3. Save to Firestore if logged in
+      if (auth.currentUser) {
+        await addDoc(collection(db, "itineraries"), {
+          userId: auth.currentUser.uid,
+          destination: details.destination,
+          duration: details.duration,
+          budgetAmount: details.budgetAmount,
+          travelStyle: selectedTravelStyles.join(", "),
+          itineraryData: {
+            itinerary: itineraryData,
+            budget: budgetData
+          },
+          createdAt: serverTimestamp()
+        });
+      }
+
+    } catch (err) {
+      console.error("Generation error:", err);
+      setError("Something went wrong while weaving your journey. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    generateJourney();
   };
 
   const toggleItem = useCallback((list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
@@ -358,7 +548,7 @@ export const Planner = () => {
 
         {/* Right Form Column */}
         <div className="lg:col-span-7 bg-surface-container-lowest rounded-lg p-8 md:p-12 editorial-shadow lg:-mt-32">
-          <form className="space-y-12" onSubmit={(e) => e.preventDefault()}>
+          <form className="space-y-12" onSubmit={handleSubmit}>
             {/* Trip Basics */}
             <FormSection title="Trip Basics">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -726,11 +916,131 @@ export const Planner = () => {
 
             {/* Submit Button */}
             <div className="pt-8">
-              <button className="w-full py-6 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-bold text-xl editorial-shadow transition-transform active:scale-[0.98]" type="submit">
-                Generate My Journey
+              {!user && (
+                <p className="text-xs text-center text-on-surface-variant mb-4 opacity-70">
+                  Sign in to save your journeys to your profile.
+                </p>
+              )}
+              <button 
+                disabled={isGenerating}
+                className="w-full py-6 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-bold text-xl editorial-shadow transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3" 
+                type="submit"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    Weaving your journey...
+                  </>
+                ) : (
+                  "Generate My Journey"
+                )}
               </button>
+              {error && <p className="text-error text-center mt-4 text-sm font-medium">{error}</p>}
             </div>
           </form>
+
+          {/* Results Section */}
+          <AnimatePresence>
+            {(itinerary || budgetBreakdown) && (
+              <motion.div 
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-16 space-y-12"
+              >
+                <div className="text-center space-y-4">
+                  <h2 className="text-4xl font-headline font-bold text-primary">Your Bespoke Journey</h2>
+                  <p className="text-on-surface-variant max-w-lg mx-auto italic">
+                    "A journey of a thousand miles begins with a single step, and a well-crafted plan."
+                  </p>
+                </div>
+
+                {itinerary && (
+                  <div className="space-y-8">
+                    <div className="flex items-center gap-4">
+                      <div className="h-px flex-1 bg-surface-container-highest" />
+                      <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-on-surface-variant">The Itinerary</h3>
+                      <div className="h-px flex-1 bg-surface-container-highest" />
+                    </div>
+
+                    <div className="space-y-12">
+                      {itinerary.days.map((day) => (
+                        <div key={day.day} className="relative pl-8 border-l border-primary/20">
+                          <div className="absolute -left-3 top-0 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-on-primary">
+                            {day.day}
+                          </div>
+                          <div className="space-y-6">
+                            <div>
+                              <h4 className="text-2xl font-headline font-bold text-on-background">{day.title}</h4>
+                            </div>
+                            <div className="grid gap-6">
+                              {day.activities.map((activity, idx) => (
+                                <div key={idx} className="bg-surface-container-low rounded-lg p-6 editorial-shadow border border-surface-container-highest/50">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-primary bg-primary/10 px-2 py-1 rounded">
+                                      {activity.time}
+                                    </span>
+                                    <span className="text-[10px] font-medium text-on-surface-variant italic">
+                                      {activity.location}
+                                    </span>
+                                  </div>
+                                  <h5 className="text-lg font-bold text-on-surface mb-2">{activity.activity}</h5>
+                                  <p className="text-sm text-on-surface-variant leading-relaxed">
+                                    {activity.description}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {itinerary.recommendations && itinerary.recommendations.length > 0 && (
+                      <div className="bg-primary/5 rounded-lg p-8 border border-primary/10">
+                        <h4 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
+                          <Compass className="w-5 h-5" />
+                          Curator's Notes
+                        </h4>
+                        <ul className="space-y-3">
+                          {itinerary.recommendations.map((rec, idx) => (
+                            <li key={idx} className="text-sm text-on-surface-variant flex gap-3">
+                              <span className="text-primary font-bold">•</span>
+                              {rec}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {budgetBreakdown && (
+                  <div className="space-y-8">
+                    <div className="flex items-center gap-4">
+                      <div className="h-px flex-1 bg-surface-container-highest" />
+                      <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-on-surface-variant">The Investment</h3>
+                      <div className="h-px flex-1 bg-surface-container-highest" />
+                    </div>
+                    <BudgetBreakdown 
+                      data={budgetBreakdown} 
+                      duration={details.duration} 
+                      onUpdate={setBudgetBreakdown}
+                    />
+                  </div>
+                )}
+
+                <div className="flex justify-center pt-8">
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex items-center gap-2 px-8 py-3 rounded-full border border-on-surface/20 text-on-surface-variant hover:bg-surface-container-highest transition-colors text-sm font-bold uppercase tracking-widest"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Export as PDF
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </section>
