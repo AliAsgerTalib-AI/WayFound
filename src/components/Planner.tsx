@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2 } from "lucide-react";
+import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart } from "lucide-react";
 import { GoogleGenAI, Type } from "@google/genai";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
 
@@ -107,6 +107,20 @@ const TRAVEL_STYLES = [
   "Adventure", 
   "Health & Wellness"
 ];
+
+const TRAVEL_STYLE_ICONS: Record<string, any> = {
+  "Slow Travel": Clock,
+  "Moderate": Activity,
+  "Fast Paced": Zap,
+  "Backpacker": Backpack,
+  "Budget": Wallet,
+  "Mid range": Coins,
+  "Luxury": Crown,
+  "Cultural": Landmark,
+  "Immersive": Eye,
+  "Adventure": Mountain,
+  "Health & Wellness": Heart
+};
 
 const AVOID_SUGGESTIONS = [
   "Crowded tourist traps",
@@ -476,7 +490,7 @@ export const Planner = () => {
                           key={item}
                           whileTap={{ scale: 0.95 }}
                           onClick={() => toggleTravelType(item)}
-                          className={`px-6 py-2 rounded-full border-0 transition-all ${isSelected ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
+                          className={`px-6 py-2 rounded-full text-sm border-0 transition-all ${isSelected ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
                           type="button"
                         >
                           {item}
@@ -499,14 +513,16 @@ export const Planner = () => {
                     <div className="flex flex-wrap gap-3">
                       {TRAVEL_STYLES.map((item) => {
                         const isSelected = selectedTravelStyles.includes(item);
+                        const Icon = TRAVEL_STYLE_ICONS[item];
                         return (
                           <motion.button 
                             key={item}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => toggleTravelStyle(item)}
-                            className={`px-4 py-2 rounded-full text-xs border-0 transition-all ${isSelected ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
+                            className={`px-4 py-2 rounded-full text-sm border-0 transition-all flex items-center gap-2 ${isSelected ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
                             type="button"
                           >
+                            {Icon && <Icon className="w-3 h-3" />}
                             {item}
                           </motion.button>
                         );
@@ -568,7 +584,7 @@ export const Planner = () => {
                       whileTap={{ scale: 0.95 }}
                       onClick={() => addAvoidSuggestion(suggestion)}
                       type="button"
-                      className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full bg-surface-container-highest text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors"
+                      className="px-5 py-2 rounded-full text-sm transition-all bg-surface-container-low text-on-surface hover:bg-secondary-container border border-transparent hover:border-surface-container-highest"
                     >
                       + {suggestion}
                     </motion.button>
@@ -587,7 +603,7 @@ export const Planner = () => {
                     {["Hotel", "Hostel", "Airbnb", "Boutique"].map((item) => (
                       <button 
                         key={item}
-                        className={`px-6 py-2 rounded-full border-0 transition-all ${item === "Boutique" ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
+                        className={`px-6 py-2 rounded-full text-sm border-0 transition-all ${item === "Boutique" ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
                         type="button"
                       >
                         {item}
