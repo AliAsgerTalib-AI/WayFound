@@ -272,6 +272,24 @@ export const Planner = () => {
     setBudgetError(null);
     
     try {
+      const rawKey = process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY;
+      let apiKey = rawKey?.trim();
+
+      // Handle cases where the environment variable might be the literal string "undefined" or "null"
+      if (apiKey === "undefined" || apiKey === "null") {
+        apiKey = "";
+      }
+
+      if (!apiKey) {
+        throw new Error("Gemini API Key is missing. Please ensure GEMINI_API_KEY is set in your environment variables or AI Studio Secrets.");
+      }
+
+      if (!apiKey.startsWith("AIza")) {
+        throw new Error(`Invalid API Key format. Gemini keys should start with 'AIza'. Found: "${apiKey.substring(0, 4)}..."`);
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      
       const budgetPrompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
       Trip Details:
       - Duration: ${details.duration} days
@@ -315,18 +333,27 @@ export const Planner = () => {
         required: ["totalTripEstimate", "currency", "categories", "summary"]
       };
 
-      const budgetResponse = await fetch("/api/generate-budget", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: budgetPrompt, schema: budgetSchema })
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: budgetPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: budgetSchema
+        }
       });
 
-      if (!budgetResponse.ok) {
-        const errorData = await budgetResponse.json().catch(() => ({}));
-        throw new Error(errorData.details || errorData.error || "Budget generation failed");
+      if (!response.text) {
+        const finishReason = (response as any).candidates?.[0]?.finishReason;
+        throw new Error(`Gemini failed to generate a response. Reason: ${finishReason || "Unknown"}. This often happens due to safety filters or quota limits.`);
       }
-      const budgetData = await budgetResponse.json();
-      setBudgetBreakdown(budgetData);
+
+      try {
+        const budgetData = JSON.parse(response.text);
+        setBudgetBreakdown(budgetData);
+      } catch (parseErr) {
+        console.error("JSON Parse Error:", response.text);
+        throw new Error("Failed to parse the budget data. The AI returned an invalid format.");
+      }
     } catch (err) {
       console.error("Budget generation error:", err);
       setBudgetError(err instanceof Error ? err.message : "Failed to generate budget. Please try again.");
@@ -345,6 +372,24 @@ export const Planner = () => {
     setError(null);
     
     try {
+      const rawKey = process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY;
+      let apiKey = rawKey?.trim();
+
+      // Handle cases where the environment variable might be the literal string "undefined" or "null"
+      if (apiKey === "undefined" || apiKey === "null") {
+        apiKey = "";
+      }
+
+      if (!apiKey) {
+        throw new Error("Gemini API Key is missing. Please ensure GEMINI_API_KEY is set in your environment variables or AI Studio Secrets.");
+      }
+
+      if (!apiKey.startsWith("AIza")) {
+        throw new Error(`Invalid API Key format. Gemini keys should start with 'AIza'. Found: "${apiKey.substring(0, 4)}..."`);
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+
       // 1. Generate Budget
       const budgetPrompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
       Trip Details:
@@ -389,18 +434,27 @@ export const Planner = () => {
         required: ["totalTripEstimate", "currency", "categories", "summary"]
       };
 
-      const budgetResponse = await fetch("/api/generate-budget", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: budgetPrompt, schema: budgetSchema })
+      const budgetResponse = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: budgetPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: budgetSchema
+        }
       });
 
-      if (!budgetResponse.ok) {
-        const errorData = await budgetResponse.json().catch(() => ({}));
-        throw new Error(errorData.details || errorData.error || "Budget generation failed");
+      if (!budgetResponse.text) {
+        const finishReason = (budgetResponse as any).candidates?.[0]?.finishReason;
+        throw new Error(`Budget generation failed. Reason: ${finishReason || "Unknown"}`);
       }
-      const budgetData = await budgetResponse.json();
-      setBudgetBreakdown(budgetData);
+      
+      let budgetData;
+      try {
+        budgetData = JSON.parse(budgetResponse.text);
+        setBudgetBreakdown(budgetData);
+      } catch (e) {
+        throw new Error("Failed to parse budget data.");
+      }
 
       // 2. Generate Itinerary
       const itineraryPrompt = `Generate a bespoke travel itinerary for a ${details.duration}-day trip to ${details.destination}.
@@ -451,18 +505,27 @@ export const Planner = () => {
         required: ["title", "destination", "days"]
       };
 
-      const itineraryResponse = await fetch("/api/generate-budget", { // Reusing the same proxy endpoint
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: itineraryPrompt, schema: itinerarySchema })
+      const itineraryResponse = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: itineraryPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: itinerarySchema
+        }
       });
 
-      if (!itineraryResponse.ok) {
-        const errorData = await itineraryResponse.json().catch(() => ({}));
-        throw new Error(errorData.details || errorData.error || "Itinerary generation failed");
+      if (!itineraryResponse.text) {
+        const finishReason = (itineraryResponse as any).candidates?.[0]?.finishReason;
+        throw new Error(`Itinerary generation failed. Reason: ${finishReason || "Unknown"}`);
       }
-      const itineraryData = await itineraryResponse.json();
-      setItinerary(itineraryData);
+
+      let itineraryData;
+      try {
+        itineraryData = JSON.parse(itineraryResponse.text);
+        setItinerary(itineraryData);
+      } catch (e) {
+        throw new Error("Failed to parse itinerary data.");
+      }
 
       // 3. Save to Firestore if logged in
       if (auth.currentUser) {

@@ -16,35 +16,6 @@ async function startServer() {
 
   app.use(express.json());
 
-  // API Proxy for Gemini
-  app.post("/api/generate-budget", async (req, res) => {
-    try {
-      const { prompt, schema } = req.body;
-      
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
-      }
-
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: schema
-        }
-      });
-
-      res.json(JSON.parse(response.text));
-    } catch (error) {
-      console.error("Gemini Proxy Error:", error);
-      res.status(500).json({ 
-        error: "Gemini API Error",
-        details: error instanceof Error ? error.message : String(error)
-      });
-    }
-  });
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
