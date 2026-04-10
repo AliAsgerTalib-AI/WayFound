@@ -233,7 +233,6 @@ export const Planner = () => {
     setBudgetError(null);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
       Trip Details:
       - Duration: ${details.duration} days
@@ -250,41 +249,42 @@ export const Planner = () => {
       
       Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              totalTripEstimate: { type: Type.NUMBER },
-              currency: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              categories: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    category: { type: Type.STRING },
-                    dailyEstimate: { type: Type.NUMBER },
-                    totalEstimate: { type: Type.NUMBER },
-                    description: { type: Type.STRING },
-                    icon: { 
-                      type: Type.STRING,
-                      enum: ["home", "food", "transport", "activities", "other"]
-                    }
-                  },
-                  required: ["category", "dailyEstimate", "totalEstimate", "description", "icon"]
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          totalTripEstimate: { type: Type.NUMBER },
+          currency: { type: Type.STRING },
+          summary: { type: Type.STRING },
+          categories: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                category: { type: Type.STRING },
+                dailyEstimate: { type: Type.NUMBER },
+                totalEstimate: { type: Type.NUMBER },
+                description: { type: Type.STRING },
+                icon: { 
+                  type: Type.STRING,
+                  enum: ["home", "food", "transport", "activities", "other"]
                 }
-              }
-            },
-            required: ["totalTripEstimate", "currency", "categories", "summary"]
+              },
+              required: ["category", "dailyEstimate", "totalEstimate", "description", "icon"]
+            }
           }
-        }
+        },
+        required: ["totalTripEstimate", "currency", "categories", "summary"]
+      };
+
+      const response = await fetch("/api/generate-budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, schema })
       });
 
-      const data = JSON.parse(response.text);
+      if (!response.ok) throw new Error("Server proxy failed");
+
+      const data = await response.json();
       setBudgetBreakdown(data);
     } catch (error) {
       console.error("Error generating budget:", error);
