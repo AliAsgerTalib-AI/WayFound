@@ -453,7 +453,11 @@ export const Planner = () => {
                 )}
 
                 {budgetBreakdown && (
-                  <BudgetBreakdown data={budgetBreakdown} duration={duration} />
+                  <BudgetBreakdown 
+                    data={budgetBreakdown} 
+                    duration={duration} 
+                    onUpdate={(newData) => setBudgetBreakdown(newData)}
+                  />
                 )}
               </div>
             </div>
