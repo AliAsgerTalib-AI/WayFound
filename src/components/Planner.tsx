@@ -321,12 +321,15 @@ export const Planner = () => {
         body: JSON.stringify({ prompt: budgetPrompt, schema: budgetSchema })
       });
 
-      if (!budgetResponse.ok) throw new Error("Budget generation failed");
+      if (!budgetResponse.ok) {
+        const errorData = await budgetResponse.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Budget generation failed");
+      }
       const budgetData = await budgetResponse.json();
       setBudgetBreakdown(budgetData);
     } catch (err) {
       console.error("Budget generation error:", err);
-      setBudgetError("Failed to generate budget. Please try again.");
+      setBudgetError(err instanceof Error ? err.message : "Failed to generate budget. Please try again.");
     } finally {
       setIsGeneratingBudget(false);
     }
@@ -392,7 +395,10 @@ export const Planner = () => {
         body: JSON.stringify({ prompt: budgetPrompt, schema: budgetSchema })
       });
 
-      if (!budgetResponse.ok) throw new Error("Budget generation failed");
+      if (!budgetResponse.ok) {
+        const errorData = await budgetResponse.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Budget generation failed");
+      }
       const budgetData = await budgetResponse.json();
       setBudgetBreakdown(budgetData);
 
@@ -451,7 +457,10 @@ export const Planner = () => {
         body: JSON.stringify({ prompt: itineraryPrompt, schema: itinerarySchema })
       });
 
-      if (!itineraryResponse.ok) throw new Error("Itinerary generation failed");
+      if (!itineraryResponse.ok) {
+        const errorData = await itineraryResponse.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Itinerary generation failed");
+      }
       const itineraryData = await itineraryResponse.json();
       setItinerary(itineraryData);
 
@@ -473,7 +482,7 @@ export const Planner = () => {
 
     } catch (err) {
       console.error("Generation error:", err);
-      setError("Something went wrong while weaving your journey. Please try again.");
+      setError(err instanceof Error ? err.message : "Something went wrong while weaving your journey. Please try again.");
     } finally {
       setIsGenerating(false);
     }

@@ -27,7 +27,7 @@ async function startServer() {
 
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -38,7 +38,10 @@ async function startServer() {
       res.json(JSON.parse(response.text));
     } catch (error) {
       console.error("Gemini Proxy Error:", error);
-      res.status(500).json({ error: "Failed to generate content from Gemini." });
+      res.status(500).json({ 
+        error: "Gemini API Error",
+        details: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 

@@ -19,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: "gemini-flash-latest",
+      model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -28,12 +28,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     // Parse and return the JSON response from Gemini
-    const result = JSON.parse(response.text);
-    res.status(200).json(result);
+    const data = JSON.parse(response.text);
+    res.status(200).json(data);
   } catch (error) {
     console.error("Vercel API Error:", error);
     res.status(500).json({ 
-      error: "Failed to generate budget from Gemini.",
+      error: "Gemini API Error",
       details: error instanceof Error ? error.message : String(error)
     });
   }
