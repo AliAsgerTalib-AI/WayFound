@@ -386,7 +386,7 @@ export const Planner = () => {
                   </AnimatePresence>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Duration</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">DURATION (Days)</label>
                   <div className="relative">
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
                     <input 
@@ -400,7 +400,7 @@ export const Planner = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Budget</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">BUDGET (USD)</label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-bold">$</span>
                     <input 
@@ -485,7 +485,7 @@ export const Planner = () => {
                     })}
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-8">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Category</label>
                     <select className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors">
@@ -494,9 +494,9 @@ export const Planner = () => {
                       <option>Workation</option>
                     </select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-4">
                     <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Style</label>
-                    <div className="flex flex-wrap gap-3 mt-2">
+                    <div className="flex flex-wrap gap-3">
                       {TRAVEL_STYLES.map((item) => {
                         const isSelected = selectedTravelStyles.includes(item);
                         return (
