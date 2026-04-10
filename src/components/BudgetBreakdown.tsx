@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
-import { TrendingUp, Home, Utensils, Car, Ticket, MoreHorizontal, Settings2, Check, Plane, ShoppingBag, Coffee, Camera, Map, ShieldCheck, Wifi } from "lucide-react";
+import { TrendingUp, Home, Utensils, Car, Ticket, MoreHorizontal, Settings2, Check, Plane, ShoppingBag, Coffee, Camera, Map, ShieldCheck, Wifi, LucideIcon } from "lucide-react";
 
 export type BudgetIconType = "home" | "food" | "transport" | "activities" | "other" | "flight" | "shopping" | "coffee" | "camera" | "map" | "insurance" | "wifi";
 
@@ -25,7 +25,7 @@ interface BudgetBreakdownProps {
   onUpdate?: (newData: BudgetData) => void;
 }
 
-const IconMap: Record<BudgetIconType, any> = {
+const IconMap: Record<BudgetIconType, LucideIcon> = {
   home: Home,
   food: Utensils,
   transport: Car,

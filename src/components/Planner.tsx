@@ -1,9 +1,24 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart } from "lucide-react";
+import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, LucideIcon } from "lucide-react";
 import { GoogleGenAI, Type } from "@google/genai";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
 
+// --- Types ---
+
+interface TripDetails {
+  origin: string;
+  destination: string;
+  duration: number;
+  budgetAmount: number;
+  numTravelers: number;
+  travelCategory: string;
+  accommodationType: string;
+  healthNotes: string;
+  avoidText: string;
+}
+
+// --- Constants ---
 const DESTINATIONS = [
   "Kyoto, Japan",
   "Amalfi Coast, Italy",
@@ -108,7 +123,7 @@ const TRAVEL_STYLES = [
   "Health & Wellness"
 ];
 
-const TRAVEL_STYLE_ICONS: Record<string, any> = {
+const TRAVEL_STYLE_ICONS: Record<string, LucideIcon> = {
   "Slow Travel": Clock,
   "Moderate": Activity,
   "Fast Paced": Zap,
@@ -131,12 +146,62 @@ const AVOID_SUGGESTIONS = [
   "Strenuous hiking"
 ];
 
+// --- Sub-components ---
+
+interface SelectionChipProps {
+  label: string;
+  isSelected: boolean;
+  onClick: () => void;
+  icon?: LucideIcon;
+  variant?: "default" | "small";
+}
+
+const SelectionChip: React.FC<SelectionChipProps> = ({ label, isSelected, onClick, icon: Icon, variant = "default" }) => (
+  <motion.button 
+    whileTap={{ scale: 0.95 }}
+    onClick={onClick}
+    className={`rounded-full transition-all flex items-center gap-2 border-0 ${
+      variant === "small" ? "px-4 py-2 text-sm" : "px-6 py-2 text-sm"
+    } ${
+      isSelected 
+        ? "bg-[#1a3c34] text-white editorial-shadow" 
+        : "bg-surface-container-low text-on-surface hover:bg-secondary-container"
+    }`} 
+    type="button"
+  >
+    {Icon && <Icon className="w-3 h-3" />}
+    {label}
+  </motion.button>
+);
+
+interface FormSectionProps {
+  title: string;
+  children: React.ReactNode;
+  description?: string;
+}
+
+const FormSection: React.FC<FormSectionProps> = ({ title, children, description }) => (
+  <div className="space-y-6">
+    <div className="space-y-1">
+      <h3 className="text-2xl font-headline font-bold text-primary">{title}</h3>
+      {description && <p className="text-xs text-on-surface-variant opacity-70">{description}</p>}
+    </div>
+    {children}
+  </div>
+);
+
 export const Planner = () => {
-  const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState("");
-  const [duration, setDuration] = useState<number>(7);
-  const [budgetAmount, setBudgetAmount] = useState<number>(2000);
-  const [numTravelers, setNumTravelers] = useState<number>(1);
+  const [details, setDetails] = useState<TripDetails>({
+    origin: "",
+    destination: "",
+    duration: 7,
+    budgetAmount: 2000,
+    numTravelers: 1,
+    travelCategory: "Leisure",
+    accommodationType: "Boutique",
+    healthNotes: "",
+    avoidText: ""
+  });
   
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -147,8 +212,6 @@ export const Planner = () => {
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["English only"]);
   const [selectedFood, setSelectedFood] = useState<string[]>([]);
   const [selectedDeliverables, setSelectedDeliverables] = useState<string[]>(["Main itinerary table"]);
-  const [healthNotes, setHealthNotes] = useState("");
-  const [avoidText, setAvoidText] = useState("");
   
   const [budgetBreakdown, setBudgetBreakdown] = useState<BudgetData | null>(null);
   const [isGeneratingBudget, setIsGeneratingBudget] = useState(false);
@@ -156,8 +219,12 @@ export const Planner = () => {
 
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
+  const updateDetail = (key: keyof TripDetails, value: string | number) => {
+    setDetails(prev => ({ ...prev, [key]: value }));
+  };
+
   const generateBudgetBreakdown = async () => {
-    if (!destination) {
+    if (!details.destination) {
       setBudgetError("Please enter a destination first.");
       return;
     }
@@ -167,12 +234,12 @@ export const Planner = () => {
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `Generate a detailed travel budget breakdown for a trip to ${destination}.
+      const prompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
       Trip Details:
-      - Duration: ${duration} days
+      - Duration: ${details.duration} days
       - Travel Style: ${selectedTravelStyles.join(", ")}
-      - Number of Travelers: ${numTravelers}
-      - Total Budget Goal: $${budgetAmount}
+      - Number of Travelers: ${details.numTravelers}
+      - Total Budget Goal: $${details.budgetAmount}
       
       Provide realistic estimates for:
       1. Accommodation
@@ -227,80 +294,33 @@ export const Planner = () => {
     }
   };
 
-  const toggleInterest = (interest: string) => {
-    setSelectedInterests(prev => 
-      prev.includes(interest) 
-        ? prev.filter(i => i !== interest) 
-        : [...prev, interest]
+  const toggleItem = useCallback((list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
+    setList(prev => 
+      prev.includes(item) 
+        ? prev.filter(i => i !== item) 
+        : [...prev, item]
     );
-  };
-
-  const toggleTravelType = (type: string) => {
-    setSelectedTravelTypes(prev => 
-      prev.includes(type) 
-        ? prev.filter(t => t !== type) 
-        : [...prev, type]
-    );
-  };
-
-  const toggleTravelStyle = (style: string) => {
-    setSelectedTravelStyles(prev => 
-      prev.includes(style) 
-        ? prev.filter(s => s !== style) 
-        : [...prev, style]
-    );
-  };
-
-  const toggleTiming = (option: string) => {
-    setSelectedTiming(prev => 
-      prev.includes(option) 
-        ? prev.filter(o => o !== option) 
-        : [...prev, option]
-    );
-  };
-
-  const toggleLanguage = (lang: string) => {
-    setSelectedLanguages(prev => 
-      prev.includes(lang) 
-        ? prev.filter(l => l !== lang) 
-        : [...prev, lang]
-    );
-  };
-
-  const toggleFood = (food: string) => {
-    setSelectedFood(prev => 
-      prev.includes(food) 
-        ? prev.filter(f => f !== food) 
-        : [...prev, food]
-    );
-  };
-
-  const toggleDeliverable = (option: string) => {
-    setSelectedDeliverables(prev => 
-      prev.includes(option) 
-        ? prev.filter(o => o !== option) 
-        : [...prev, option]
-    );
-  };
+  }, []);
 
   const addAvoidSuggestion = (suggestion: string) => {
-    setAvoidText(prev => {
-      const items = prev.split(",").map(i => i.trim()).filter(i => i !== "");
+    setDetails(prev => {
+      const items = prev.avoidText.split(",").map(i => i.trim()).filter(i => i !== "");
       if (items.includes(suggestion)) return prev;
-      return items.length > 0 ? `${prev}, ${suggestion}` : suggestion;
+      const newText = items.length > 0 ? `${prev.avoidText}, ${suggestion}` : suggestion;
+      return { ...prev, avoidText: newText };
     });
   };
 
   useEffect(() => {
-    if (destination.length > 1) {
+    if (details.destination.length > 1) {
       const filtered = DESTINATIONS.filter(d => 
-        d.toLowerCase().includes(destination.toLowerCase())
+        d.toLowerCase().includes(details.destination.toLowerCase())
       );
       setSuggestions(filtered);
     } else {
       setSuggestions([]);
     }
-  }, [destination]);
+  }, [details.destination]);
 
   // Handle click outside to close suggestions
   useEffect(() => {
@@ -340,33 +360,34 @@ export const Planner = () => {
         <div className="lg:col-span-7 bg-surface-container-lowest rounded-lg p-8 md:p-12 editorial-shadow lg:-mt-32">
           <form className="space-y-12" onSubmit={(e) => e.preventDefault()}>
             {/* Trip Basics */}
-            <div className="space-y-6">
-              <h3 className="text-2xl font-headline font-bold text-primary">Trip Basics</h3>
+            <FormSection title="Trip Basics">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Origin</label>
+                  <label htmlFor="origin" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Origin</label>
                   <div className="relative">
                     <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
                     <input 
+                      id="origin"
                       className="w-full bg-surface-container-low border-0 rounded-lg p-4 pl-12 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
                       placeholder="Where are you now?" 
                       type="text"
-                      value={origin}
-                      onChange={(e) => setOrigin(e.target.value)}
+                      value={details.origin}
+                      onChange={(e) => updateDetail("origin", e.target.value)}
                     />
                   </div>
                 </div>
                 <div className="space-y-2 relative" ref={suggestionsRef}>
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Destination</label>
+                  <label htmlFor="destination" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Destination</label>
                   <div className="relative">
                     <Compass className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
                     <input 
+                      id="destination"
                       className="w-full bg-surface-container-low border-0 rounded-lg p-4 pl-12 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
                       placeholder="Where do you want to be?" 
                       type="text"
-                      value={destination}
+                      value={details.destination}
                       onChange={(e) => {
-                        setDestination(e.target.value);
+                        updateDetail("destination", e.target.value);
                         setShowSuggestions(true);
                       }}
                       onFocus={() => setShowSuggestions(true)}
@@ -387,7 +408,7 @@ export const Planner = () => {
                             type="button"
                             className="w-full text-left px-6 py-3 hover:bg-surface-container-low transition-colors flex items-center gap-3 text-sm font-medium text-on-surface"
                             onClick={() => {
-                              setDestination(s);
+                              updateDetail("destination", s);
                               setShowSuggestions(false);
                             }}
                           >
@@ -400,43 +421,46 @@ export const Planner = () => {
                   </AnimatePresence>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">DURATION (Days)</label>
+                  <label htmlFor="duration" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">DURATION (Days)</label>
                   <div className="relative">
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
                     <input 
+                      id="duration"
                       className="w-full bg-surface-container-low border-0 rounded-lg p-4 pl-12 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
                       placeholder="e.g., 12" 
                       type="number"
                       min="1"
-                      value={duration}
-                      onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
+                      value={details.duration}
+                      onChange={(e) => updateDetail("duration", parseInt(e.target.value) || 0)}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">BUDGET (USD)</label>
+                  <label htmlFor="budget" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">BUDGET (USD)</label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-bold">$</span>
                     <input 
+                      id="budget"
                       className="w-full bg-surface-container-low border-0 rounded-lg p-4 pl-8 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
                       placeholder="Amount" 
                       type="number"
-                      value={budgetAmount}
-                      onChange={(e) => setBudgetAmount(parseInt(e.target.value) || 0)}
+                      value={details.budgetAmount}
+                      onChange={(e) => updateDetail("budgetAmount", parseInt(e.target.value) || 0)}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Number of Travelers</label>
+                  <label htmlFor="travelers" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Number of Travelers</label>
                   <div className="relative">
                     <Users className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
                     <input 
+                      id="travelers"
                       className="w-full bg-surface-container-low border-0 rounded-lg p-4 pl-12 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
                       placeholder="e.g., 2" 
                       type="number" 
                       min="1"
-                      value={numTravelers}
-                      onChange={(e) => setNumTravelers(parseInt(e.target.value) || 1)}
+                      value={details.numTravelers}
+                      onChange={(e) => updateDetail("numTravelers", parseInt(e.target.value) || 1)}
                     />
                   </div>
                 </div>
@@ -469,40 +493,38 @@ export const Planner = () => {
                 {budgetBreakdown && (
                   <BudgetBreakdown 
                     data={budgetBreakdown} 
-                    duration={duration} 
+                    duration={details.duration} 
                     onUpdate={(newData) => setBudgetBreakdown(newData)}
                   />
                 )}
               </div>
-            </div>
+            </FormSection>
 
             {/* Who's Travelling */}
-            <div className="space-y-6">
-              <h3 className="text-2xl font-headline font-bold text-primary">Who's Travelling</h3>
+            <FormSection title="Who's Travelling">
               <div className="space-y-8">
                 <div className="space-y-4">
                   <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Travel Type</label>
                   <div className="flex flex-wrap gap-3">
-                    {TRAVEL_TYPES.map((item) => {
-                      const isSelected = selectedTravelTypes.includes(item);
-                      return (
-                        <motion.button 
-                          key={item}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => toggleTravelType(item)}
-                          className={`px-6 py-2 rounded-full text-sm border-0 transition-all ${isSelected ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
-                          type="button"
-                        >
-                          {item}
-                        </motion.button>
-                      );
-                    })}
+                    {TRAVEL_TYPES.map((item) => (
+                      <SelectionChip
+                        key={item}
+                        label={item}
+                        isSelected={selectedTravelTypes.includes(item)}
+                        onClick={() => toggleItem(selectedTravelTypes, setSelectedTravelTypes, item)}
+                      />
+                    ))}
                   </div>
                 </div>
                 <div className="space-y-8">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Category</label>
-                    <select className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors">
+                    <label htmlFor="travelCategory" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Category</label>
+                    <select 
+                      id="travelCategory"
+                      className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors"
+                      value={details.travelCategory}
+                      onChange={(e) => updateDetail("travelCategory", e.target.value)}
+                    >
                       <option>Leisure</option>
                       <option>Business</option>
                       <option>Workation</option>
@@ -511,131 +533,91 @@ export const Planner = () => {
                   <div className="space-y-4">
                     <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Style</label>
                     <div className="flex flex-wrap gap-3">
-                      {TRAVEL_STYLES.map((item) => {
-                        const isSelected = selectedTravelStyles.includes(item);
-                        const Icon = TRAVEL_STYLE_ICONS[item];
-                        return (
-                          <motion.button 
-                            key={item}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => toggleTravelStyle(item)}
-                            className={`px-4 py-2 rounded-full text-sm border-0 transition-all flex items-center gap-2 ${isSelected ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
-                            type="button"
-                          >
-                            {Icon && <Icon className="w-3 h-3" />}
-                            {item}
-                          </motion.button>
-                        );
-                      })}
+                      {TRAVEL_STYLES.map((item) => (
+                        <SelectionChip
+                          key={item}
+                          label={item}
+                          isSelected={selectedTravelStyles.includes(item)}
+                          onClick={() => toggleItem(selectedTravelStyles, setSelectedTravelStyles, item)}
+                          icon={TRAVEL_STYLE_ICONS[item]}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </FormSection>
 
             {/* Interests */}
-            <div className="space-y-6">
-              <h3 className="text-2xl font-headline font-bold text-primary">Interests & Preferences</h3>
+            <FormSection title="Interests & Preferences">
               <div className="space-y-4">
                 <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">What interests you?</label>
                 <div className="flex flex-wrap gap-3">
-                  {INTERESTS.map((interest) => {
-                    const isSelected = selectedInterests.includes(interest);
-                    return (
-                      <motion.button 
-                        key={interest}
-                        layout
-                        whileTap={{ scale: 0.92 }}
-                        onClick={() => toggleInterest(interest)}
-                        className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-2 border-2 ${
-                          isSelected 
-                            ? "bg-[#1a3c34] text-white border-[#1a3c34] editorial-shadow" 
-                            : "bg-surface-container-low text-on-surface border-transparent hover:border-primary/30 hover:bg-secondary-container"
-                        }`} 
-                        type="button"
-                      >
-                        {isSelected && (
-                          <motion.span 
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="w-1.5 h-1.5 rounded-full bg-on-primary"
-                          />
-                        )}
-                        {interest}
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-4">
-                <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Things to avoid</label>
-                <input 
-                  className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
-                  placeholder="e.g., Crowded tourist traps, long flights" 
-                  type="text"
-                  value={avoidText}
-                  onChange={(e) => setAvoidText(e.target.value)}
-                />
-                <div className="flex flex-wrap gap-2 px-2">
-                  {AVOID_SUGGESTIONS.map((suggestion) => (
-                    <motion.button
-                      key={suggestion}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => addAvoidSuggestion(suggestion)}
-                      type="button"
-                      className="px-5 py-2 rounded-full text-sm transition-all bg-surface-container-low text-on-surface hover:bg-secondary-container border border-transparent hover:border-surface-container-highest"
-                    >
-                      + {suggestion}
-                    </motion.button>
+                  {INTERESTS.map((interest) => (
+                    <SelectionChip
+                      key={interest}
+                      label={interest}
+                      isSelected={selectedInterests.includes(interest)}
+                      onClick={() => toggleItem(selectedInterests, setSelectedInterests, interest)}
+                    />
                   ))}
                 </div>
               </div>
-            </div>
+              <div className="space-y-4">
+                <label htmlFor="avoid" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Things to avoid</label>
+                <input 
+                  id="avoid"
+                  className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
+                  placeholder="e.g., Crowded tourist traps, long flights" 
+                  type="text"
+                  value={details.avoidText}
+                  onChange={(e) => updateDetail("avoidText", e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2 px-2">
+                  {AVOID_SUGGESTIONS.map((suggestion) => (
+                    <SelectionChip
+                      key={suggestion}
+                      label={`+ ${suggestion}`}
+                      isSelected={false}
+                      onClick={() => addAvoidSuggestion(suggestion)}
+                      variant="small"
+                    />
+                  ))}
+                </div>
+              </div>
+            </FormSection>
 
             {/* Travel Preferences */}
-            <div className="space-y-6">
-              <h3 className="text-2xl font-headline font-bold text-primary">Travel Preferences</h3>
+            <FormSection title="Travel Preferences">
               <div className="space-y-8">
                 <div className="space-y-4">
                   <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Accommodation Type</label>
                   <div className="flex flex-wrap gap-3">
                     {["Hotel", "Hostel", "Airbnb", "Boutique"].map((item) => (
-                      <button 
+                      <SelectionChip
                         key={item}
-                        className={`px-6 py-2 rounded-full text-sm border-0 transition-all ${item === "Boutique" ? "bg-[#1a3c34] text-white editorial-shadow" : "bg-surface-container-low text-on-surface hover:bg-secondary-container"}`} 
-                        type="button"
-                      >
-                        {item}
-                      </button>
+                        label={item}
+                        isSelected={details.accommodationType === item}
+                        onClick={() => updateDetail("accommodationType", item)}
+                      />
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
+            </FormSection>
 
             {/* Timing */}
             <div className="space-y-6">
               <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">WHEN ARE YOU PLANNING TO TRAVEL? <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></h3>
               <div className="flex flex-wrap gap-3">
-                {TRAVEL_TIMING_OPTIONS.map((option) => {
-                  const isSelected = selectedTiming.includes(option);
-                  return (
-                    <motion.button 
-                      key={option}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => toggleTiming(option)}
-                      className={`px-5 py-2 rounded-full text-sm border transition-all ${
-                        isSelected 
-                          ? "bg-[#1a3c34] text-white border-[#1a3c34] editorial-shadow" 
-                          : "bg-surface-container-low text-on-surface border-surface-container-highest hover:bg-secondary-container"
-                      }`} 
-                      type="button"
-                    >
-                      {option}
-                    </motion.button>
-                  );
-                })}
+                {TRAVEL_TIMING_OPTIONS.map((option) => (
+                  <SelectionChip
+                    key={option}
+                    label={option}
+                    isSelected={selectedTiming.includes(option)}
+                    onClick={() => toggleItem(selectedTiming, setSelectedTiming, option)}
+                  />
+                ))}
               </div>
             </div>
 
@@ -653,48 +635,28 @@ export const Planner = () => {
               <div className="space-y-6">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">LANGUAGES YOU SPEAK <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></h3>
                 <div className="flex flex-wrap gap-3">
-                  {LANGUAGES.map((lang) => {
-                    const isSelected = selectedLanguages.includes(lang);
-                    return (
-                      <motion.button 
-                        key={lang}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => toggleLanguage(lang)}
-                        className={`px-5 py-2 rounded-full text-sm border transition-all ${
-                          isSelected 
-                            ? "bg-[#1a3c34] text-white border-[#1a3c34] editorial-shadow" 
-                            : "bg-surface-container-low text-on-surface border-surface-container-highest hover:bg-secondary-container"
-                        }`} 
-                        type="button"
-                      >
-                        {lang}
-                      </motion.button>
-                    );
-                  })}
+                  {LANGUAGES.map((lang) => (
+                    <SelectionChip
+                      key={lang}
+                      label={lang}
+                      isSelected={selectedLanguages.includes(lang)}
+                      onClick={() => toggleItem(selectedLanguages, setSelectedLanguages, lang)}
+                    />
+                  ))}
                 </div>
               </div>
 
               <div className="space-y-6">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">FOOD PREFERENCES <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></h3>
                 <div className="flex flex-wrap gap-3">
-                  {FOOD_PREFERENCES.map((food) => {
-                    const isSelected = selectedFood.includes(food);
-                    return (
-                      <motion.button 
-                        key={food}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => toggleFood(food)}
-                        className={`px-5 py-2 rounded-full text-sm border transition-all ${
-                          isSelected 
-                            ? "bg-[#1a3c34] text-white border-[#1a3c34] editorial-shadow" 
-                            : "bg-surface-container-low text-on-surface border-surface-container-highest hover:bg-secondary-container"
-                        }`} 
-                        type="button"
-                      >
-                        {food}
-                      </motion.button>
-                    );
-                  })}
+                  {FOOD_PREFERENCES.map((food) => (
+                    <SelectionChip
+                      key={food}
+                      label={food}
+                      isSelected={selectedFood.includes(food)}
+                      onClick={() => toggleItem(selectedFood, setSelectedFood, food)}
+                    />
+                  ))}
                 </div>
               </div>
             </div>
@@ -714,15 +676,16 @@ export const Planner = () => {
                 <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">HEALTH CONSIDERATIONS <span className="text-[10px] font-normal lowercase opacity-70">(optional)</span></h3>
                 <div className="relative">
                   <textarea 
+                    id="healthNotes"
                     className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors resize-none" 
                     placeholder="e.g. heart condition, requires slow pace, low altitude, ground-floor rooms, easy clinic access..." 
                     rows={4}
                     maxLength={500}
-                    value={healthNotes}
-                    onChange={(e) => setHealthNotes(e.target.value)}
+                    value={details.healthNotes}
+                    onChange={(e) => updateDetail("healthNotes", e.target.value)}
                   ></textarea>
                   <div className="absolute bottom-2 right-4 text-[10px] text-on-surface-variant opacity-50">
-                    {healthNotes.length} / 500
+                    {details.healthNotes.length} / 500
                   </div>
                 </div>
                 
@@ -749,24 +712,14 @@ export const Planner = () => {
               <div className="space-y-6">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">DELIVERABLES <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></h3>
                 <div className="flex flex-wrap gap-3">
-                  {DELIVERABLES_OPTIONS.map((option) => {
-                    const isSelected = selectedDeliverables.includes(option);
-                    return (
-                      <motion.button 
-                        key={option}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => toggleDeliverable(option)}
-                        className={`px-5 py-2 rounded-full text-sm border transition-all ${
-                          isSelected 
-                            ? "bg-[#1a3c34] text-white border-[#1a3c34] editorial-shadow" 
-                            : "bg-surface-container-low text-on-surface border-surface-container-highest hover:bg-secondary-container"
-                        }`} 
-                        type="button"
-                      >
-                        {option}
-                      </motion.button>
-                    );
-                  })}
+                  {DELIVERABLES_OPTIONS.map((option) => (
+                    <SelectionChip
+                      key={option}
+                      label={option}
+                      isSelected={selectedDeliverables.includes(option)}
+                      onClick={() => toggleItem(selectedDeliverables, setSelectedDeliverables, option)}
+                    />
+                  ))}
                 </div>
               </div>
             </div>
