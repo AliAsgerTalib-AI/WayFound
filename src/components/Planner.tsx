@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, LucideIcon } from "lucide-react";
+import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, Target, Gem, LucideIcon, ShieldCheck } from "lucide-react";
 import { GoogleGenAI, Type } from "@google/genai";
+import Markdown from "react-markdown";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
@@ -11,6 +12,7 @@ import html2pdf from 'html2pdf.js';
 interface ItineraryDay {
   day: number;
   title: string;
+  mapQuery: string;
   activities: {
     time: string;
     activity: string;
@@ -61,13 +63,16 @@ const INTERESTS = [
   "Nature & Hiking",
   "Culinary Arts",
   "Historical Sites",
-  "Wellness & Spa",
   "Local Craft",
   "Photography",
+  "Instagram Spots",
+  "Hidden Gems",
+  "Aesthetic Cafes",
+  "Scenic Overlooks",
   "Adventure Sports",
-  "Landscapes",
   "Nightlife",
   "Architecture",
+  "Urban Exploration",
   "Leisure Stroll",
   "Local Markets",
   "Street Art",
@@ -75,16 +80,21 @@ const INTERESTS = [
 ];
 
 const TRAVEL_TIMING_OPTIONS = [
-  "Off-season (fewer crowds & lower prices)",
-  "Good weather (mild & dry)",
-  "Avoid peak summer heat",
-  "Avoid rainy season",
+  "Shoulder season",
+  "Avoid major holidays & school breaks",
   "Avoid peak tourist season",
+  "Avoid peak summer heat",
+  "Avoid monsoon/hurricane seasons",
   "Spring (Mar–May)",
   "Early summer (Jun)",
   "Autumn (Sep–Nov)",
   "Winter sun (Dec–Feb)",
-  "I'm flexible"
+  "Northern/Southern Lights window",
+  "Spring bloom & Flora peaks",
+  "Autumn foliage & Harvest peaks",
+  "Wildlife migration seasons",
+  "I'm flexible",
+  "Optimized by AI"
 ];
 
 const LANGUAGES = [
@@ -96,76 +106,89 @@ const LANGUAGES = [
   "Italian",
   "Arabic",
   "Mandarin",
-  "Other"
+  "Hindi"
 ];
 
 const FOOD_PREFERENCES = [
   "Vegan",
-  "Allergies",
-  "Fast food (McDonald's / KFC)",
-  "Indian",
-  "European",
+  "Vegetarian",
   "Halal",
   "Kosher",
-  "Asian"
-];
-
-const DELIVERABLES_OPTIONS = [
-  "Main itinerary table",
-  "Detailed budget breakdown",
-  "Alternative routes",
-  "Google Maps with marked stops",
-  "Packing & SIM tips",
-  "Emergency & medical info",
-  "Flight & transport options",
-  "Accessibility notes"
+  "Gluten Free",
+  "Nut-Free / Allergy Friendly",
+  "Fast food",
+  "European",
+  "South Asian",
+  "East Asian",
+  "Southeast Asian",
+  "Middle east",
+  "African",
+  "Latin"
 ];
 
 const TRAVEL_TYPES = [
-  "Solo", 
-  "Family", 
-  "Group", 
-  "Senior Citizen", 
-  "With Children", 
-  "With Pets", 
-  "Handicap Accessible"
+  "Solo Traveler",
+  "Couple / Romantic",
+  "Family (General)",
+  "Family with Infants/Toddlers",
+  "Family with Teens",
+  "Multi-generational Family",
+  "Group of Friends",
+  "Large Group (10+)",
+  "Pet-Friendly (Traveling with Pets)",
+  "Mobility Accessible (Wheelchair/Walker)"
 ];
 
 const TRAVEL_STYLES = [
-  "Slow Travel", 
-  "Moderate", 
-  "Fast Paced", 
-  "Backpacker", 
-  "Budget", 
-  "Mid range", 
-  "Luxury", 
-  "Cultural", 
-  "Immersive", 
-  "Adventure", 
-  "Health & Wellness"
+  "Slow & Immersive (1-2 main activities/day)",
+  "Moderate (Balanced exploration & rest)",
+  "Fast-Paced (High density / Snapshot tour)",
+  "Efficient & Optimized (Minimum transit, maximum sites)",
+  "Shoestring / Backpacker (Hostels & Street Food)",
+  "Budget-Friendly (Value-focused, public transit)",
+  "Mid-Range (Boutique hotels, mix of dining)",
+  "Luxury (High-end amenities, private transit)",
+  "Ultra-Luxury (Exclusive access, concierge-led)",
+  "Cultural & Heritage (Museums, Landmarks)",
+  "Adventure & Active (Physical exertion focus)",
+  "Health & Wellness (Spa, Yoga, Longevity)",
+  "Off-the-Beaten-Path (Non-tourist, local secrets)",
+  "Eco-Conscious / Sustainable (Low-impact sites)",
+  "Educational / Deep-Dive (Guided, academic context)",
 ];
 
-const TRAVEL_STYLE_ICONS: Record<string, LucideIcon> = {
-  "Slow Travel": Clock,
-  "Moderate": Activity,
-  "Fast Paced": Zap,
-  "Backpacker": Backpack,
-  "Budget": Wallet,
-  "Mid range": Coins,
-  "Luxury": Crown,
-  "Cultural": Landmark,
-  "Immersive": Eye,
-  "Adventure": Mountain,
-  "Health & Wellness": Heart
+ 
+const TRAVEL_STYLE_ICONS: Record<string, any> = {
+  "Slow & Immersive (1-2 main activities/day)": Clock,
+  "Moderate (Balanced exploration & rest)": Activity,
+  "Fast-Paced (High density / Snapshot tour)": Zap,
+  "Efficient & Optimized (Minimum transit, maximum sites)": Target,
+  "Shoestring / Backpacker (Hostels & Street Food)": Backpack,
+  "Budget-Friendly (Value-focused, public transit)": Wallet,
+  "Mid-Range (Boutique hotels, mix of dining)": Coins,
+  "Luxury (High-end amenities, private transit)": Crown,
+  "Ultra-Luxury (Exclusive access, concierge-led)": Gem,
+  "Cultural & Heritage (Museums, Landmarks)": Landmark,
+  "Adventure & Active (Physical exertion focus)": Mountain,
+  "Health & Wellness (Spa, Yoga, Longevity)": Heart,
+  "Off-the-Beaten-Path (Non-tourist, local secrets)": Compass,
+  "Eco-Conscious / Sustainable (Low-impact sites)": Leaf,
+  "Educational / Deep-Dive (Guided, academic context)": BookOpen,
 };
 
 const AVOID_SUGGESTIONS = [
   "Crowded tourist traps",
   "Long flights",
+  "Tight Layovers (<2.5h international / <90m domestic)",
   "Early mornings",
   "Expensive dining",
   "Extreme weather",
-  "Strenuous hiking"
+  "Non-Accessible Venues",
+  "Steep Inclines / Non-Accessible Stairs",
+  "Influencer Hotspots / Viral 'Photo Queues'",
+  "High-Density Tourist Clusters",
+  "Generic Chain Restaurants",
+   "Mass-Market Group Tours",
 ];
 
 // --- Sub-components ---
@@ -200,12 +223,16 @@ interface FormSectionProps {
   title: string;
   children: React.ReactNode;
   description?: string;
+  icon?: React.ReactNode;
 }
 
-const FormSection: React.FC<FormSectionProps> = ({ title, children, description }) => (
+const FormSection: React.FC<FormSectionProps> = ({ title, children, description, icon }) => (
   <div className="space-y-6">
     <div className="space-y-1">
-      <h3 className="text-2xl font-headline font-bold text-primary">{title}</h3>
+      <div className="flex items-center gap-3">
+        {icon && <div className="text-primary">{icon}</div>}
+        <h3 className="text-2xl font-headline font-bold text-primary">{title}</h3>
+      </div>
       {description && <p className="text-xs text-on-surface-variant opacity-70">{description}</p>}
     </div>
     {children}
@@ -217,7 +244,7 @@ export const Planner = () => {
     origin: "",
     destination: "",
     duration: 7,
-    budgetAmount: 2000,
+    budgetAmount: 1000,
     numTravelers: 1,
     travelCategory: "Leisure",
     accommodationType: "Boutique",
@@ -227,12 +254,15 @@ export const Planner = () => {
   
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedInterests, setSelectedInterests] = useState<string[]>(["Nature & Hiking", "Historical Sites"]);
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [selectedTravelTypes, setSelectedTravelTypes] = useState<string[]>(["Solo"]);
   const [selectedTravelStyles, setSelectedTravelStyles] = useState<string[]>(["Slow Travel"]);
-  const [selectedTiming, setSelectedTiming] = useState<string[]>(["Off-season (fewer crowds & lower prices)"]);
+  const [selectedTiming, setSelectedTiming] = useState<string[]>([]);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["English only"]);
   const [selectedFood, setSelectedFood] = useState<string[]>([]);
+  const [selectedAvoid, setSelectedAvoid] = useState<string[]>([]);
+  const [currentStep, setCurrentStep] = useState(1);
+  const totalSteps = 4;
   
   const [budgetBreakdown, setBudgetBreakdown] = useState<BudgetData | null>(null);
   const [itinerary, setItinerary] = useState<ItineraryData | null>(null);
@@ -344,9 +374,11 @@ export const Planner = () => {
       - Interests: ${selectedInterests.join(", ")}
       - Travel Style: ${selectedTravelStyles.join(", ")}
       - Accommodation: ${details.accommodationType}
-      - Avoid: ${details.avoidText}
+      - Avoid: ${selectedAvoid.join(", ")}
       
-      Create a compelling story of what travel you have planned first, then a day-by-day plan that feels intentional and well-paced. For each activity, provide a brief 'why' explaining why it was chosen for this specific traveler.`;
+      Create a compelling story of what travel you have planned first, then a day-by-day plan that feels intentional and well-paced. For each activity, provide a 'why' explaining why it was chosen for this specific traveler.
+      
+      For each day, provide a "mapQuery" which is a string that can be used to search for the day's main locations on Google Maps (e.g., "Eiffel Tower, Louvre Museum, Paris").`;
 
       const itinerarySchema = {
         type: Type.OBJECT,
@@ -361,6 +393,7 @@ export const Planner = () => {
               properties: {
                 day: { type: Type.NUMBER },
                 title: { type: Type.STRING },
+                mapQuery: { type: Type.STRING, description: "A comma-separated list of locations for this day to show on a map" },
                 activities: {
                   type: Type.ARRAY,
                   items: {
@@ -376,7 +409,7 @@ export const Planner = () => {
                   }
                 }
               },
-              required: ["day", "title", "activities"]
+              required: ["day", "title", "mapQuery", "activities"]
             }
           },
           recommendations: {
@@ -423,9 +456,68 @@ export const Planner = () => {
     }
   }, [details.numTravelers]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    
+    if (currentStep < totalSteps) {
+      nextStep();
+      return;
+    }
+
+    // Final Validation
+    if (!details.origin.trim()) {
+      setError("Please specify where you are starting from.");
+      setCurrentStep(1);
+      return;
+    }
+    if (!details.destination.trim()) {
+      setError("Please specify your destination.");
+      setCurrentStep(1);
+      return;
+    }
+    if (selectedInterests.length === 0) {
+      setError("Please select at least one interest to help us curate your journey.");
+      setCurrentStep(3);
+      return;
+    }
+    if (selectedTravelStyles.length === 0) {
+      setError("Please select a travel style.");
+      setCurrentStep(2);
+      return;
+    }
+
+    setError(null);
     generateJourney();
+  };
+
+  const nextStep = () => {
+    if (currentStep === 1) {
+      if (!details.origin.trim() || !details.destination.trim()) {
+        setError("Please fill in both origin and destination.");
+        return;
+      }
+    }
+    if (currentStep === 2) {
+      if (selectedTravelStyles.length === 0) {
+        setError("Please select at least one travel style.");
+        return;
+      }
+    }
+    if (currentStep === 3) {
+      if (selectedInterests.length === 0) {
+        setError("Please select at least one interest.");
+        return;
+      }
+    }
+    setError(null);
+    setCurrentStep(prev => Math.min(prev + 1, totalSteps));
+    window.scrollTo({ top: document.getElementById('curations')?.offsetTop || 0, behavior: 'smooth' });
+  };
+
+  const prevStep = () => {
+    setError(null);
+    setCurrentStep(prev => Math.max(prev - 1, 1));
+    window.scrollTo({ top: document.getElementById('curations')?.offsetTop || 0, behavior: 'smooth' });
   };
 
   const handleExportPDF = () => {
@@ -485,32 +577,50 @@ export const Planner = () => {
 
   return (
     <section id="curations" className="py-32 px-8 bg-surface">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
-        {/* Left Editorial Column */}
-        <div className="lg:col-span-5 lg:sticky lg:top-32">
+      <div className="max-w-4xl mx-auto">
+        {/* Editorial Header */}
+        <div className="mb-16 text-center">
           <span className="text-primary font-headline font-bold uppercase tracking-widest text-xs mb-4 block">The Planner</span>
-          <h2 className="text-5xl font-headline font-bold text-on-background mb-8 leading-tight">Tell us about your next chapter.</h2>
-          <p className="text-lg text-on-surface-variant leading-relaxed mb-12">
+          <h2 className="text-5xl md:text-6xl font-headline font-bold text-on-background mb-8 leading-tight">Tell us about your next chapter.</h2>
+          <p className="text-xl text-on-surface-variant leading-relaxed max-w-2xl mx-auto">
             Every great story needs a setting. Fill in the details of your desired journey, and let our curator weave a bespoke itinerary tailored to your rhythm.
           </p>
-          <motion.div 
-            whileHover={{ scale: 1.02 }}
-            className="relative rounded-lg overflow-hidden md:-ml-24 h-[300px] md:h-[500px] w-full editorial-shadow"
-          >
-            <img 
-              alt="View from a wooden balcony overlooking a misty mountain valley" 
-              className="w-full h-full object-cover" 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBRYQy9z51lDGTaE30ZV37BP5PNTbSmNANZFCnm7OIdgDaaAUlzwt3Sz41-Sqg0mO5joVkVpceUqlNuSwqhNp-40DqIaXDWIzBpZy_8zvh6_uKNMd6Z9zoHJJO-QBk4U3jlZjQbfEwIll1j-ds3UUQUU4hckz1YdEKtY4JzsiBTOVLIQuszJ2ys2RIgV1MAI0XJNKhNIkynKflQhg6I-GilvHNpssYu1YLRpgu_NuPwm0X-zhUgNC1FRd7tnbErvWRgi2OelkapfBo"
-              referrerPolicy="no-referrer"
-            />
-          </motion.div>
         </div>
 
-        {/* Right Form Column */}
-        <div className="lg:col-span-7 bg-surface-container-lowest rounded-lg p-8 md:p-12 editorial-shadow lg:-mt-32">
+        {/* Form Column */}
+        <div className="bg-surface-container-lowest rounded-lg p-8 md:p-12 editorial-shadow">
+          {/* Progress Bar */}
+          <div className="mb-12">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-xs font-bold uppercase tracking-widest text-primary">Step {currentStep} of {totalSteps}</span>
+              <span className="text-xs font-medium text-on-surface-variant">
+                {currentStep === 1 && "The Basics"}
+                {currentStep === 2 && "The Vibe"}
+                {currentStep === 3 && "Interests & Timing"}
+                {currentStep === 4 && "Final Details"}
+              </span>
+            </div>
+            <div className="h-1 w-full bg-surface-container-high rounded-full overflow-hidden">
+              <motion.div 
+                initial={false}
+                animate={{ width: `${(currentStep / totalSteps) * 100}%` }}
+                className="h-full bg-primary"
+              />
+            </div>
+          </div>
+
           <form className="space-y-12" onSubmit={handleSubmit}>
-            {/* Trip Basics */}
-            <FormSection title="Trip Basics">
+            <AnimatePresence mode="wait">
+              {currentStep === 1 && (
+                <motion.div
+                  key="step1"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-12"
+                >
+                  {/* Trip Basics */}
+                  <FormSection title="Trip Basics" icon={<MapPin className="w-5 h-5" />}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label htmlFor="origin" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Origin</label>
@@ -616,17 +726,27 @@ export const Planner = () => {
                 </div>
               </div>
             </FormSection>
+          </motion.div>
+        )}
 
+        {currentStep === 2 && (
+          <motion.div
+            key="step2"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-12"
+          >
             {/* Who's Travelling */}
-            <FormSection title="Who's Travelling">
+            <FormSection title="Who's Travelling" icon={<Users className="w-5 h-5" />}>
               <div className="space-y-8">
                 <div className="space-y-4">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Travel Type</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Travel Type <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></label>
                   <div className="flex flex-wrap gap-3">
                     {TRAVEL_TYPES
                       .filter(item => {
                         if (details.numTravelers === 1) {
-                          return !["Family", "Group", "With Children"].includes(item);
+                          return item === "Solo Traveler" || item.includes("Pet-Friendly") || item.includes("Mobility");
                         }
                         return true;
                       })
@@ -655,7 +775,7 @@ export const Planner = () => {
                     </select>
                   </div>
                   <div className="space-y-4">
-                    <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Style</label>
+                    <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Style <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></label>
                     <div className="flex flex-wrap gap-3">
                       {TRAVEL_STYLES.map((item) => (
                         <SelectionChip
@@ -672,47 +792,8 @@ export const Planner = () => {
               </div>
             </FormSection>
 
-            {/* Interests */}
-            <FormSection title="Interests & Preferences">
-              <div className="space-y-4">
-                <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">What interests you?</label>
-                <div className="flex flex-wrap gap-3">
-                  {INTERESTS.map((interest) => (
-                    <SelectionChip
-                      key={interest}
-                      label={interest}
-                      isSelected={selectedInterests.includes(interest)}
-                      onClick={() => toggleItem(selectedInterests, setSelectedInterests, interest)}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-4">
-                <label htmlFor="avoid" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Things to avoid</label>
-                <input 
-                  id="avoid"
-                  className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
-                  placeholder="e.g., Crowded tourist traps, long flights" 
-                  type="text"
-                  value={details.avoidText}
-                  onChange={(e) => updateDetail("avoidText", e.target.value)}
-                />
-                <div className="flex flex-wrap gap-2 px-2">
-                  {AVOID_SUGGESTIONS.map((suggestion) => (
-                    <SelectionChip
-                      key={suggestion}
-                      label={`+ ${suggestion}`}
-                      isSelected={false}
-                      onClick={() => addAvoidSuggestion(suggestion)}
-                      variant="small"
-                    />
-                  ))}
-                </div>
-              </div>
-            </FormSection>
-
             {/* Travel Preferences */}
-            <FormSection title="Travel Preferences">
+            <FormSection title="Travel Preferences" icon={<Compass className="w-5 h-5" />}>
               <div className="space-y-8">
                 <div className="space-y-4">
                   <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Accommodation Type</label>
@@ -726,6 +807,67 @@ export const Planner = () => {
                       />
                     ))}
                   </div>
+                </div>
+              </div>
+            </FormSection>
+          </motion.div>
+        )}
+
+        {currentStep === 3 && (
+          <motion.div
+            key="step3"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-12"
+          >
+            {/* Interests */}
+            <FormSection title="Interests & Preferences" icon={<Utensils className="w-5 h-5" />}>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">What interests you? <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></label>
+                  <div className="flex gap-4">
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedInterests([])}
+                      className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline"
+                    >
+                      Clear All
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const shuffled = [...INTERESTS].sort(() => 0.5 - Math.random());
+                        setSelectedInterests(shuffled.slice(0, 5));
+                      }}
+                      className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline"
+                    >
+                      Surprise Me
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {INTERESTS.map((interest) => (
+                    <SelectionChip
+                      key={interest}
+                      label={interest}
+                      isSelected={selectedInterests.includes(interest)}
+                      onClick={() => toggleItem(selectedInterests, setSelectedInterests, interest)}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Things to avoid <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></label>
+                <div className="flex flex-wrap gap-3">
+                  {AVOID_SUGGESTIONS.map((suggestion) => (
+                    <SelectionChip
+                      key={suggestion}
+                      label={suggestion}
+                      isSelected={selectedAvoid.includes(suggestion)}
+                      onClick={() => toggleItem(selectedAvoid, setSelectedAvoid, suggestion)}
+                    />
+                  ))}
                 </div>
               </div>
             </FormSection>
@@ -744,7 +886,17 @@ export const Planner = () => {
                 ))}
               </div>
             </div>
+          </motion.div>
+        )}
 
+        {currentStep === 4 && (
+          <motion.div
+            key="step4"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-12"
+          >
             {/* Language & Food */}
             <div className="space-y-10">
               <div className="relative py-4">
@@ -785,7 +937,7 @@ export const Planner = () => {
               </div>
             </div>
 
-            {/* Health & Accessibility */}
+             {/* Health & Accessibility */}
             <div className="space-y-6">
               <div className="relative py-4">
                 <div className="absolute inset-0 flex items-center" aria-hidden="true">
@@ -822,24 +974,49 @@ export const Planner = () => {
               </div>
             </div>
 
-            {/* Submit Button */}
-            <div className="pt-8">
-              <button 
-                disabled={isGenerating}
-                className="w-full py-6 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-bold text-xl editorial-shadow transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3" 
-                type="submit"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    Weaving your journey...
-                  </>
-                ) : (
-                  "Generate My Journey"
-                )}
-              </button>
-              {error && <p className="text-error text-center mt-4 text-sm font-medium">{error}</p>}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Submit Button */}
+            <div className="pt-12 flex flex-col md:flex-row gap-4">
+              {currentStep > 1 && (
+                <button 
+                  type="button"
+                  onClick={prevStep}
+                  className="flex-1 py-4 rounded-full border border-primary text-primary font-headline font-bold transition-all hover:bg-primary/5 active:scale-[0.98]"
+                >
+                  Back
+                </button>
+              )}
+              
+              {currentStep < totalSteps ? (
+                <button 
+                  type="button"
+                  onClick={nextStep}
+                  className="flex-[2] py-4 rounded-full bg-primary text-on-primary font-headline font-bold transition-all hover:bg-primary/90 active:scale-[0.98] editorial-shadow"
+                >
+                  Continue
+                </button>
+              ) : (
+                <button 
+                  type="button"
+                  disabled={isGenerating}
+                  onClick={() => handleSubmit()}
+                  className="flex-[2] py-6 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-bold text-xl editorial-shadow transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3" 
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                      Weaving your journey...
+                    </>
+                  ) : (
+                    "Generate My Journey"
+                  )}
+                </button>
+              )}
             </div>
+            {error && <p className="text-error text-center mt-4 text-sm font-medium">{error}</p>}
           </form>
 
           {/* Results Section */}
@@ -885,6 +1062,22 @@ export const Planner = () => {
                               <div>
                                 <h4 className="text-2xl font-headline font-bold text-on-background">{day.title}</h4>
                               </div>
+
+                              {/* Map Embed */}
+                              {import.meta.env.VITE_GOOGLE_MAPS_API_KEY && (
+                                <div className="w-full h-[300px] rounded-lg overflow-hidden border editorial-shadow" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
+                                  <iframe
+                                    width="100%"
+                                    height="100%"
+                                    style={{ border: 0 }}
+                                    loading="lazy"
+                                    allowFullScreen
+                                    referrerPolicy="no-referrer-when-downgrade"
+                                    src={`https://www.google.com/maps/embed/v1/search?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(day.mapQuery)}`}
+                                  ></iframe>
+                                </div>
+                              )}
+
                               <div className="grid gap-6">
                                 {day.activities.map((activity, idx) => (
                                   <div key={idx} className="bg-surface-container-low rounded-lg p-6 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
