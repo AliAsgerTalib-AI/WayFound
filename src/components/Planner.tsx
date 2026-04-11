@@ -19,7 +19,11 @@ interface ItineraryDay {
     description: string;
     why: string;
     howToGetThere?: string;
+    openingHours?: string;
+    estimatedCost?: string;
+    restaurantRecommendation?: string;
   }[];
+  travelerNotes?: string;
 }
 
 interface ItineraryData {
@@ -270,6 +274,7 @@ export const Planner = () => {
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingBudget, setIsGeneratingBudget] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
 
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -381,7 +386,15 @@ export const Planner = () => {
       
       For each activity:
       1. Provide a 'why' explaining why it was chosen for this specific traveler.
-      2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location.`;
+      2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location.
+      3. Provide 'openingHours' for attractions if applicable.
+      4. Provide 'estimatedCost' for the activity (e.g., "$25 per person" or "Free").
+      5. Provide a 'restaurantRecommendation' nearby for lunch or dinner if the activity time aligns with a meal.
+      
+      For each day:
+      1. Provide 'travelerNotes' with practical tips, cultural etiquette, or safety advice specific to that day's locations.`;
+
+      setLastPrompt(itineraryPrompt);
 
       const itinerarySchema = {
         type: Type.OBJECT,
@@ -396,6 +409,7 @@ export const Planner = () => {
               properties: {
                 day: { type: Type.NUMBER },
                 title: { type: Type.STRING },
+                travelerNotes: { type: Type.STRING, description: "Practical tips and notes for the traveler for this day" },
                 activities: {
                   type: Type.ARRAY,
                   items: {
@@ -406,7 +420,10 @@ export const Planner = () => {
                       location: { type: Type.STRING },
                       description: { type: Type.STRING },
                       why: { type: Type.STRING, description: "Brief explanation of why this activity was chosen" },
-                      howToGetThere: { type: Type.STRING, description: "Detailed description of how to get to this location from the previous one" }
+                      howToGetThere: { type: Type.STRING, description: "Detailed description of how to get to this location from the previous one" },
+                      openingHours: { type: Type.STRING, description: "Opening hours for the attraction" },
+                      estimatedCost: { type: Type.STRING, description: "Estimated cost for the activity" },
+                      restaurantRecommendation: { type: Type.STRING, description: "A specific restaurant recommendation nearby" }
                     },
                     required: ["time", "activity", "location", "description", "why", "howToGetThere"]
                   }
@@ -1083,13 +1100,44 @@ export const Planner = () => {
                                     </p>
                                     
                                     {activity.howToGetThere && (
-                                      <div className="mb-6 p-4 rounded-lg bg-surface-container-highest/30 border border-surface-container-highest flex items-start gap-3">
+                                      <div className="mb-4 p-3 rounded bg-surface-container-highest/30 border border-surface-container-highest flex items-start gap-3">
                                         <div className="mt-1 p-1 rounded-full bg-primary/10">
                                           <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                                         </div>
                                         <div>
                                           <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1 opacity-60">Transit Info</p>
                                           <p className="text-xs text-on-surface-variant leading-relaxed">{activity.howToGetThere}</p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                                      {activity.openingHours && (
+                                        <div className="p-3 rounded bg-surface-container-highest/20 border border-surface-container-highest/50 flex items-start gap-3">
+                                          <Clock className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-0.5 opacity-60">Opening Hours</p>
+                                            <p className="text-xs text-on-surface-variant">{activity.openingHours}</p>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {activity.estimatedCost && (
+                                        <div className="p-3 rounded bg-surface-container-highest/20 border border-surface-container-highest/50 flex items-start gap-3">
+                                          <Coins className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-0.5 opacity-60">Est. Cost</p>
+                                            <p className="text-xs text-on-surface-variant">{activity.estimatedCost}</p>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {activity.restaurantRecommendation && (
+                                      <div className="mb-6 p-4 rounded-lg bg-primary/5 border border-primary/10 flex items-start gap-3">
+                                        <Utensils className="w-4 h-4 text-primary shrink-0 mt-1" />
+                                        <div>
+                                          <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1 opacity-80">Dining Recommendation</p>
+                                          <p className="text-xs text-on-surface-variant leading-relaxed italic">"{activity.restaurantRecommendation}"</p>
                                         </div>
                                       </div>
                                     )}
@@ -1103,6 +1151,23 @@ export const Planner = () => {
                                   </div>
                                 ))}
                               </div>
+
+                              {day.travelerNotes && (
+                                <div className="mt-8 p-6 rounded-xl bg-surface-container-highest/20 border border-surface-container-highest/50 relative overflow-hidden">
+                                  <div className="absolute top-0 right-0 p-4 opacity-10">
+                                    <BookOpen className="w-12 h-12 text-primary" />
+                                  </div>
+                                  <div className="relative z-10">
+                                    <h5 className="text-xs font-bold uppercase tracking-widest text-primary mb-3 flex items-center gap-2">
+                                      <Zap className="w-3 h-3" />
+                                      Notes for the Traveler
+                                    </h5>
+                                    <p className="text-sm text-on-surface-variant leading-relaxed italic">
+                                      {day.travelerNotes}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -1140,6 +1205,20 @@ export const Planner = () => {
                       duration={details.duration} 
                       onUpdate={setBudgetBreakdown}
                     />
+                    
+                    {lastPrompt && (
+                      <div className="mt-12 p-6 rounded-lg bg-surface-container-low border border-surface-container-highest/50 no-print">
+                        <div className="flex items-center gap-2 mb-4">
+                          <Search className="w-4 h-4 text-on-surface-variant opacity-60" />
+                          <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant opacity-60">Generation Prompt</h4>
+                        </div>
+                        <div className="bg-surface-container-lowest p-4 rounded border border-surface-container-highest/30">
+                          <p className="text-[10px] font-mono text-on-surface-variant/70 leading-relaxed whitespace-pre-wrap">
+                            {lastPrompt}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
