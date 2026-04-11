@@ -109,8 +109,8 @@ export const BudgetBreakdown: React.FC<BudgetBreakdownProps> = ({ data, duration
         {data.categories.map((cat, idx) => {
           const Icon = IconMap[cat.icon] || MoreHorizontal;
           return (
-            <div key={idx} className={`p-4 grid grid-cols-12 gap-4 items-center transition-colors ${isEditing ? "bg-primary/5" : "hover:bg-surface-container-highest/30"}`}>
-              <div className="col-span-1 flex justify-center">
+            <div key={idx} className="p-4 flex flex-col sm:grid sm:grid-cols-12 gap-4 items-center sm:items-center transition-colors" style={{ backgroundColor: isEditing ? 'rgba(86, 100, 43, 0.05)' : undefined }}>
+              <div className="sm:col-span-1 flex justify-center">
                 <button 
                   disabled={!isEditing}
                   onClick={() => cycleIcon(idx)}
@@ -119,16 +119,18 @@ export const BudgetBreakdown: React.FC<BudgetBreakdownProps> = ({ data, duration
                   <Icon className="w-4 h-4" />
                 </button>
               </div>
-              <div className="col-span-7">
+              <div className="sm:col-span-7 w-full text-center sm:text-left">
                 {isEditing ? (
                   <div className="space-y-1">
                     <input 
-                      className="w-full bg-transparent border-b border-on-surface/20 text-sm font-bold text-on-surface focus:border-[#1a3c34] focus:ring-0 p-0"
+                      className="w-full bg-transparent border-b text-sm font-bold text-on-surface focus:border-[#1a3c34] focus:ring-0 p-0"
+                      style={{ borderColor: 'rgba(27, 28, 26, 0.2)' }}
                       value={cat.category}
                       onChange={(e) => handleUpdateCategory(idx, { category: e.target.value })}
                     />
                     <input 
-                      className="w-full bg-transparent border-b border-on-surface/10 text-[10px] text-on-surface-variant focus:border-[#1a3c34] focus:ring-0 p-0"
+                      className="w-full bg-transparent border-b text-[10px] text-on-surface-variant focus:border-[#1a3c34] focus:ring-0 p-0"
+                      style={{ borderColor: 'rgba(27, 28, 26, 0.1)' }}
                       value={cat.description}
                       onChange={(e) => handleUpdateCategory(idx, { description: e.target.value })}
                     />
@@ -140,14 +142,15 @@ export const BudgetBreakdown: React.FC<BudgetBreakdownProps> = ({ data, duration
                   </>
                 )}
               </div>
-              <div className="col-span-4 text-right">
+              <div className="sm:col-span-4 w-full text-center sm:text-right">
                 {isEditing ? (
-                  <div className="flex flex-col items-end">
+                  <div className="flex flex-col items-center sm:items-end">
                     <div className="flex items-center gap-1 text-sm font-mono font-bold text-on-surface">
                       <span>{data.currency}</span>
                       <input 
                         type="number"
-                        className="w-20 bg-transparent border-b border-on-surface/20 text-right focus:border-[#1a3c34] focus:ring-0 p-0"
+                        className="w-20 bg-transparent border-b text-right focus:border-[#1a3c34] focus:ring-0 p-0"
+                        style={{ borderColor: 'rgba(27, 28, 26, 0.2)' }}
                         value={cat.dailyEstimate}
                         onChange={(e) => handleUpdateCategory(idx, { dailyEstimate: parseInt(e.target.value) || 0 })}
                       />
@@ -179,7 +182,8 @@ export const BudgetBreakdown: React.FC<BudgetBreakdownProps> = ({ data, duration
           <TrendingUp className="w-4 h-4 text-[#1a3c34] mt-0.5" />
           {isEditing ? (
             <textarea 
-              className="w-full bg-transparent border-b border-on-surface/20 text-xs text-on-surface-variant leading-relaxed italic focus:border-[#1a3c34] focus:ring-0 p-0 resize-none"
+              className="w-full bg-transparent border-b text-xs text-on-surface-variant leading-relaxed italic focus:border-[#1a3c34] focus:ring-0 p-0 resize-none"
+              style={{ borderColor: 'rgba(27, 28, 26, 0.2)' }}
               rows={2}
               value={data.summary}
               onChange={(e) => onUpdate?.({ ...data, summary: e.target.value })}

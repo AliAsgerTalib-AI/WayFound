@@ -13,6 +13,7 @@
   --color-surface-container-highest: #e3e2df;
   
   --color-primary: #56642b;
+  --color-primary-rgb: 86, 100, 43;
   --color-primary-container: #8a9a5b;
   --color-on-primary: #ffffff;
   
@@ -23,6 +24,8 @@
   --color-on-background: #1b1c1a;
   --color-on-surface: #1b1c1a;
   --color-on-surface-variant: #46483c;
+  
+  --color-surface-container-highest-rgb: 227, 226, 223;
   
   --radius-lg: 2rem;
   --radius-xl: 3rem;
@@ -39,6 +42,34 @@
 @layer utilities {
   .editorial-shadow {
     box-shadow: var(--shadow-bloom);
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  nav, 
+  .lg\:col-span-5, 
+  form {
+    display: none !important;
+  }
+  
+  .lg\:col-span-7 {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+  
+  body {
+    background: white !important;
+  }
+  
+  .editorial-shadow {
+    box-shadow: none !important;
+    border: 1px solid #eee !important;
   }
 }
 

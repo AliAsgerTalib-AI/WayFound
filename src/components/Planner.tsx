@@ -2,10 +2,9 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, LucideIcon } from "lucide-react";
 import { GoogleGenAI, Type } from "@google/genai";
-import { auth, db } from "../lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 
 // --- Types ---
 
@@ -17,11 +16,13 @@ interface ItineraryDay {
     activity: string;
     location: string;
     description: string;
+    why: string;
   }[];
 }
 
 interface ItineraryData {
   title: string;
+  story: string;
   destination: string;
   days: ItineraryDay[];
   recommendations: string[];
@@ -232,7 +233,6 @@ export const Planner = () => {
   const [selectedTiming, setSelectedTiming] = useState<string[]>(["Off-season (fewer crowds & lower prices)"]);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["English only"]);
   const [selectedFood, setSelectedFood] = useState<string[]>([]);
-  const [selectedDeliverables, setSelectedDeliverables] = useState<string[]>(["Main itinerary table"]);
   
   const [budgetBreakdown, setBudgetBreakdown] = useState<BudgetData | null>(null);
   const [itinerary, setItinerary] = useState<ItineraryData | null>(null);
@@ -240,126 +240,12 @@ export const Planner = () => {
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingBudget, setIsGeneratingBudget] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
-  const [user, setUser] = useState(auth.currentUser);
 
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const updateDetail = (key: keyof TripDetails, value: string | number) => {
     setDetails(prev => ({ ...prev, [key]: value }));
-  };
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsubscribe();
-  }, []);
-
-  const handleSignIn = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error("Sign in error:", err);
-    }
-  };
-
-  const generateBudgetBreakdown = async () => {
-    if (!details.destination) {
-      setBudgetError("Please enter a destination first.");
-      return;
-    }
-    
-    setIsGeneratingBudget(true);
-    setBudgetError(null);
-    
-    try {
-      const rawKey = process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY;
-      let apiKey = rawKey?.trim();
-
-      // Handle cases where the environment variable might be the literal string "undefined" or "null"
-      if (apiKey === "undefined" || apiKey === "null") {
-        apiKey = "";
-      }
-
-      if (!apiKey) {
-        throw new Error("Gemini API Key is missing. Please ensure GEMINI_API_KEY is set in your environment variables or AI Studio Secrets.");
-      }
-
-      if (!apiKey.startsWith("AIza")) {
-        throw new Error(`Invalid API Key format. Gemini keys should start with 'AIza'. Found: "${apiKey.substring(0, 4)}..."`);
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-      
-      const budgetPrompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
-      Trip Details:
-      - Duration: ${details.duration} days
-      - Travel Style: ${selectedTravelStyles.join(", ")}
-      - Number of Travelers: ${details.numTravelers}
-      - Total Budget Goal: $${details.budgetAmount}
-      
-      Provide realistic estimates for:
-      1. Accommodation
-      2. Food & Drink
-      3. Transportation (local)
-      4. Activities & Sightseeing
-      5. Miscellaneous (SIM cards, tips, etc.)
-      
-      Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
-
-      const budgetSchema = {
-        type: Type.OBJECT,
-        properties: {
-          totalTripEstimate: { type: Type.NUMBER },
-          currency: { type: Type.STRING },
-          summary: { type: Type.STRING },
-          categories: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                category: { type: Type.STRING },
-                dailyEstimate: { type: Type.NUMBER },
-                totalEstimate: { type: Type.NUMBER },
-                description: { type: Type.STRING },
-                icon: { 
-                  type: Type.STRING,
-                  enum: ["home", "food", "transport", "activities", "other"]
-                }
-              },
-              required: ["category", "dailyEstimate", "totalEstimate", "description", "icon"]
-            }
-          }
-        },
-        required: ["totalTripEstimate", "currency", "categories", "summary"]
-      };
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: budgetPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: budgetSchema
-        }
-      });
-
-      if (!response.text) {
-        const finishReason = (response as any).candidates?.[0]?.finishReason;
-        throw new Error(`Gemini failed to generate a response. Reason: ${finishReason || "Unknown"}. This often happens due to safety filters or quota limits.`);
-      }
-
-      try {
-        const budgetData = JSON.parse(response.text);
-        setBudgetBreakdown(budgetData);
-      } catch (parseErr) {
-        console.error("JSON Parse Error:", response.text);
-        throw new Error("Failed to parse the budget data. The AI returned an invalid format.");
-      }
-    } catch (err) {
-      console.error("Budget generation error:", err);
-      setBudgetError(err instanceof Error ? err.message : "Failed to generate budget. Please try again.");
-    } finally {
-      setIsGeneratingBudget(false);
-    }
   };
 
   const generateJourney = async () => {
@@ -372,20 +258,15 @@ export const Planner = () => {
     setError(null);
     
     try {
-      const rawKey = process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY;
-      let apiKey = rawKey?.trim();
+      // Use VITE_ prefix for reliable client-side access in Vite/Vercel
+      const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
 
-      // Handle cases where the environment variable might be the literal string "undefined" or "null"
-      if (apiKey === "undefined" || apiKey === "null") {
-        apiKey = "";
-      }
-
-      if (!apiKey) {
-        throw new Error("Gemini API Key is missing. Please ensure GEMINI_API_KEY is set in your environment variables or AI Studio Secrets.");
+      if (!apiKey || apiKey === "undefined" || apiKey === "null") {
+        throw new Error("Gemini API Key is missing. Please ensure VITE_GEMINI_API_KEY is set in your Vercel Environment Variables and that you have REDEPLOYED.");
       }
 
       if (!apiKey.startsWith("AIza")) {
-        throw new Error(`Invalid API Key format. Gemini keys should start with 'AIza'. Found: "${apiKey.substring(0, 4)}..."`);
+        throw new Error(`Invalid API Key format. Gemini keys must start with 'AIza'. Your key starts with: "${apiKey.substring(0, 4)}"`);
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -464,14 +345,14 @@ export const Planner = () => {
       - Travel Style: ${selectedTravelStyles.join(", ")}
       - Accommodation: ${details.accommodationType}
       - Avoid: ${details.avoidText}
-      - Deliverables: ${selectedDeliverables.join(", ")}
       
-      Create a day-by-day plan that feels intentional and well-paced.`;
+      Create a compelling story of what travel you have planned first, then a day-by-day plan that feels intentional and well-paced. For each activity, provide a brief 'why' explaining why it was chosen for this specific traveler.`;
 
       const itinerarySchema = {
         type: Type.OBJECT,
         properties: {
           title: { type: Type.STRING },
+          story: { type: Type.STRING, description: "A compelling narrative of the planned journey" },
           destination: { type: Type.STRING },
           days: {
             type: Type.ARRAY,
@@ -488,9 +369,10 @@ export const Planner = () => {
                       time: { type: Type.STRING },
                       activity: { type: Type.STRING },
                       location: { type: Type.STRING },
-                      description: { type: Type.STRING }
+                      description: { type: Type.STRING },
+                      why: { type: Type.STRING, description: "Brief explanation of why this activity was chosen" }
                     },
-                    required: ["time", "activity", "location", "description"]
+                    required: ["time", "activity", "location", "description", "why"]
                   }
                 }
               },
@@ -502,7 +384,7 @@ export const Planner = () => {
             items: { type: Type.STRING }
           }
         },
-        required: ["title", "destination", "days"]
+        required: ["title", "story", "destination", "days"]
       };
 
       const itineraryResponse = await ai.models.generateContent({
@@ -527,22 +409,6 @@ export const Planner = () => {
         throw new Error("Failed to parse itinerary data.");
       }
 
-      // 3. Save to Firestore if logged in
-      if (auth.currentUser) {
-        await addDoc(collection(db, "itineraries"), {
-          userId: auth.currentUser.uid,
-          destination: details.destination,
-          duration: details.duration,
-          budgetAmount: details.budgetAmount,
-          travelStyle: selectedTravelStyles.join(", "),
-          itineraryData: {
-            itinerary: itineraryData,
-            budget: budgetData
-          },
-          createdAt: serverTimestamp()
-        });
-      }
-
     } catch (err) {
       console.error("Generation error:", err);
       setError(err instanceof Error ? err.message : "Something went wrong while weaving your journey. Please try again.");
@@ -551,9 +417,31 @@ export const Planner = () => {
     }
   };
 
+  useEffect(() => {
+    if (details.numTravelers === 1) {
+      setSelectedTravelTypes(["Solo"]);
+    }
+  }, [details.numTravelers]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     generateJourney();
+  };
+
+  const handleExportPDF = () => {
+    if (!resultsRef.current) return;
+    
+    const element = resultsRef.current;
+    const opt = {
+      margin: 10,
+      filename: `Wayfound-${details.destination || 'Journey'}.pdf`,
+      image: { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+    };
+
+    // New way to handle export to ensure it works in iframes
+    html2pdf().set(opt).from(element).save();
   };
 
   const toggleItem = useCallback((list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
@@ -596,7 +484,7 @@ export const Planner = () => {
   }, []);
 
   return (
-    <section className="py-32 px-8 bg-surface">
+    <section id="curations" className="py-32 px-8 bg-surface">
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
         {/* Left Editorial Column */}
         <div className="lg:col-span-5 lg:sticky lg:top-32">
@@ -607,7 +495,7 @@ export const Planner = () => {
           </p>
           <motion.div 
             whileHover={{ scale: 1.02 }}
-            className="relative rounded-lg overflow-hidden -ml-12 md:-ml-24 h-[500px] w-full editorial-shadow"
+            className="relative rounded-lg overflow-hidden md:-ml-24 h-[300px] md:h-[500px] w-full editorial-shadow"
           >
             <img 
               alt="View from a wooden balcony overlooking a misty mountain valley" 
@@ -727,39 +615,6 @@ export const Planner = () => {
                   </div>
                 </div>
               </div>
-
-              {/* Budget Estimation Trigger */}
-              <div className="pt-2">
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={generateBudgetBreakdown}
-                  disabled={isGeneratingBudget}
-                  type="button"
-                  className="w-full py-4 rounded-lg border-2 border-dashed border-surface-container-highest text-on-surface-variant hover:border-[#1a3c34] hover:text-[#1a3c34] transition-all flex items-center justify-center gap-3 group"
-                >
-                  {isGeneratingBudget ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Calculator className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                  )}
-                  <span className="text-xs font-bold uppercase tracking-widest">
-                    {isGeneratingBudget ? "Calculating Estimates..." : "Estimate Detailed Budget Breakdown"}
-                  </span>
-                </motion.button>
-                
-                {budgetError && (
-                  <p className="text-[10px] text-error mt-2 text-center font-bold uppercase tracking-tighter">{budgetError}</p>
-                )}
-
-                {budgetBreakdown && (
-                  <BudgetBreakdown 
-                    data={budgetBreakdown} 
-                    duration={details.duration} 
-                    onUpdate={(newData) => setBudgetBreakdown(newData)}
-                  />
-                )}
-              </div>
             </FormSection>
 
             {/* Who's Travelling */}
@@ -768,14 +623,21 @@ export const Planner = () => {
                 <div className="space-y-4">
                   <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Travel Type</label>
                   <div className="flex flex-wrap gap-3">
-                    {TRAVEL_TYPES.map((item) => (
-                      <SelectionChip
-                        key={item}
-                        label={item}
-                        isSelected={selectedTravelTypes.includes(item)}
-                        onClick={() => toggleItem(selectedTravelTypes, setSelectedTravelTypes, item)}
-                      />
-                    ))}
+                    {TRAVEL_TYPES
+                      .filter(item => {
+                        if (details.numTravelers === 1) {
+                          return !["Family", "Group", "With Children"].includes(item);
+                        }
+                        return true;
+                      })
+                      .map((item) => (
+                        <SelectionChip
+                          key={item}
+                          label={item}
+                          isSelected={selectedTravelTypes.includes(item)}
+                          onClick={() => toggleItem(selectedTravelTypes, setSelectedTravelTypes, item)}
+                        />
+                      ))}
                   </div>
                 </div>
                 <div className="space-y-8">
@@ -951,7 +813,7 @@ export const Planner = () => {
                   </div>
                 </div>
                 
-                <div className="p-4 bg-surface-container-low/50 rounded-lg border border-surface-container-highest flex items-center gap-3">
+                <div className="p-4 rounded-lg border border-surface-container-highest flex items-center gap-3" style={{ backgroundColor: 'rgba(244, 244, 240, 0.5)' }}>
                   <Lock className="w-4 h-4 text-on-surface-variant opacity-60" />
                   <p className="text-[11px] text-on-surface-variant leading-relaxed">
                     Health information is used only to personalise your results and is never stored or logged.
@@ -960,39 +822,8 @@ export const Planner = () => {
               </div>
             </div>
 
-            {/* Deliverables */}
-            <div className="space-y-6">
-              <div className="relative py-4">
-                <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                  <div className="w-full border-t border-surface-container-highest"></div>
-                </div>
-                <div className="relative flex justify-center">
-                  <span className="bg-surface-container-lowest px-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">What to include in your itinerary</span>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">DELIVERABLES <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></h3>
-                <div className="flex flex-wrap gap-3">
-                  {DELIVERABLES_OPTIONS.map((option) => (
-                    <SelectionChip
-                      key={option}
-                      label={option}
-                      isSelected={selectedDeliverables.includes(option)}
-                      onClick={() => toggleItem(selectedDeliverables, setSelectedDeliverables, option)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
             {/* Submit Button */}
             <div className="pt-8">
-              {!user && (
-                <p className="text-xs text-center text-on-surface-variant mb-4 opacity-70">
-                  Sign in to save your journeys to your profile.
-                </p>
-              )}
               <button 
                 disabled={isGenerating}
                 className="w-full py-6 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-bold text-xl editorial-shadow transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3" 
@@ -1015,6 +846,7 @@ export const Planner = () => {
           <AnimatePresence>
             {(itinerary || budgetBreakdown) && (
               <motion.div 
+                ref={resultsRef}
                 initial={{ opacity: 0, y: 40 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="mt-16 space-y-12"
@@ -1027,48 +859,64 @@ export const Planner = () => {
                 </div>
 
                 {itinerary && (
-                  <div className="space-y-8">
-                    <div className="flex items-center gap-4">
-                      <div className="h-px flex-1 bg-surface-container-highest" />
-                      <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-on-surface-variant">The Itinerary</h3>
-                      <div className="h-px flex-1 bg-surface-container-highest" />
+                  <div className="space-y-12">
+                    {/* Story Section */}
+                    <div className="bg-surface-container-low rounded-lg p-6 md:p-8 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
+                      <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-primary mb-6">The Story</h3>
+                      <p className="text-lg text-on-surface leading-relaxed font-serif italic">
+                        {itinerary.story}
+                      </p>
                     </div>
 
-                    <div className="space-y-12">
-                      {itinerary.days.map((day) => (
-                        <div key={day.day} className="relative pl-8 border-l border-primary/20">
-                          <div className="absolute -left-3 top-0 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-on-primary">
-                            {day.day}
-                          </div>
-                          <div className="space-y-6">
-                            <div>
-                              <h4 className="text-2xl font-headline font-bold text-on-background">{day.title}</h4>
+                    <div className="space-y-8">
+                      <div className="flex items-center gap-4">
+                        <div className="h-px flex-1 bg-surface-container-highest" />
+                        <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-on-surface-variant">The Itinerary</h3>
+                        <div className="h-px flex-1 bg-surface-container-highest" />
+                      </div>
+
+                      <div className="space-y-12">
+                        {itinerary.days.map((day) => (
+                          <div key={day.day} className="relative pl-8 border-l" style={{ borderColor: 'rgba(86, 100, 43, 0.2)' }}>
+                            <div className="absolute -left-3 top-0 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-on-primary">
+                              {day.day}
                             </div>
-                            <div className="grid gap-6">
-                              {day.activities.map((activity, idx) => (
-                                <div key={idx} className="bg-surface-container-low rounded-lg p-6 editorial-shadow border border-surface-container-highest/50">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-primary bg-primary/10 px-2 py-1 rounded">
-                                      {activity.time}
-                                    </span>
-                                    <span className="text-[10px] font-medium text-on-surface-variant italic">
-                                      {activity.location}
-                                    </span>
+                            <div className="space-y-6">
+                              <div>
+                                <h4 className="text-2xl font-headline font-bold text-on-background">{day.title}</h4>
+                              </div>
+                              <div className="grid gap-6">
+                                {day.activities.map((activity, idx) => (
+                                  <div key={idx} className="bg-surface-container-low rounded-lg p-6 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
+                                    <div className="flex justify-between items-start mb-2">
+                                      <span className="text-[10px] font-bold uppercase tracking-widest text-primary px-2 py-1 rounded" style={{ backgroundColor: 'rgba(86, 100, 43, 0.1)' }}>
+                                        {activity.time}
+                                      </span>
+                                      <span className="text-[10px] font-medium text-on-surface-variant italic">
+                                        {activity.location}
+                                      </span>
+                                    </div>
+                                    <h5 className="text-lg font-bold text-on-surface mb-2">{activity.activity}</h5>
+                                    <p className="text-sm text-on-surface-variant leading-relaxed mb-3">
+                                      {activity.description}
+                                    </p>
+                                    <div className="pt-3 border-t" style={{ borderColor: 'rgba(227, 226, 223, 0.3)' }}>
+                                      <p className="text-[11px] text-primary font-medium italic flex gap-2">
+                                        <span className="opacity-50">Why:</span>
+                                        {activity.why}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <h5 className="text-lg font-bold text-on-surface mb-2">{activity.activity}</h5>
-                                  <p className="text-sm text-on-surface-variant leading-relaxed">
-                                    {activity.description}
-                                  </p>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
 
                     {itinerary.recommendations && itinerary.recommendations.length > 0 && (
-                      <div className="bg-primary/5 rounded-lg p-8 border border-primary/10">
+                      <div className="rounded-lg p-8 border" style={{ backgroundColor: 'rgba(86, 100, 43, 0.05)', borderColor: 'rgba(86, 100, 43, 0.1)' }}>
                         <h4 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
                           <Compass className="w-5 h-5" />
                           Curator's Notes
@@ -1101,10 +949,11 @@ export const Planner = () => {
                   </div>
                 )}
 
-                <div className="flex justify-center pt-8">
+                <div className="flex justify-center pt-8 no-print">
                   <button 
-                    onClick={() => window.print()}
-                    className="flex items-center gap-2 px-8 py-3 rounded-full border border-on-surface/20 text-on-surface-variant hover:bg-surface-container-highest transition-colors text-sm font-bold uppercase tracking-widest"
+                    onClick={handleExportPDF}
+                    className="flex items-center gap-2 px-8 py-3 rounded-full border text-on-surface-variant hover:bg-surface-container-highest transition-colors text-sm font-bold uppercase tracking-widest"
+                    style={{ borderColor: 'rgba(27, 28, 26, 0.2)' }}
                   >
                     <FileText className="w-4 h-4" />
                     Export as PDF

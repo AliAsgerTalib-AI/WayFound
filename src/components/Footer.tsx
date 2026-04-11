@@ -1,4 +1,5 @@
 import { Share2, AtSign } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export const Footer = () => {
   return (
@@ -6,12 +7,22 @@ export const Footer = () => {
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center space-y-12 md:space-y-0">
         <div className="flex flex-col gap-4 text-center md:text-left">
           <div className="text-2xl font-bold text-on-background font-headline tracking-tighter">Wayfound</div>
-          <div className="text-on-surface-variant font-body text-sm tracking-wide">© 2024 Wayfound. The Digital Curator.</div>
+          <div className="text-on-surface-variant font-body text-sm tracking-wide">© 2026 Wayfound.</div>
         </div>
         
         <div className="flex flex-wrap justify-center gap-8">
-          {["Privacy", "Terms", "Editorial Policy", "Contact"].map((link) => (
-            <a key={link} className="text-on-surface-variant hover:text-primary transition-colors font-body text-sm tracking-wide" href="#">{link}</a>
+          {[
+            { name: "Privacy", path: "/legal#privacy" },
+            { name: "Terms", path: "/legal#terms" },
+            { name: "Contact", path: "/legal#contact" }
+          ].map((link) => (
+            <Link 
+              key={link.name} 
+              className="text-on-surface-variant hover:text-primary transition-colors font-body text-sm tracking-wide" 
+              to={link.path}
+            >
+              {link.name}
+            </Link>
           ))}
         </div>
 

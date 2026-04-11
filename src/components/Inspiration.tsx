@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 
 export const Inspiration = () => {
   return (
-    <section className="py-32 bg-surface-container-low overflow-hidden">
+    <section id="stories" className="py-32 bg-surface-container-low overflow-hidden">
       <div className="max-w-7xl mx-auto px-8">
         <div className="flex flex-col md:flex-row justify-between items-end mb-24 gap-8">
           <div className="max-w-xl">
@@ -31,7 +31,7 @@ export const Inspiration = () => {
                 <span className="text-xs font-bold uppercase tracking-widest opacity-80">Cultural Immersion</span>
                 <h3 className="text-4xl font-headline font-bold mt-2">The Silent Rhythm of Kyoto</h3>
               </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-transparent via-transparent to-transparent" style={{ backgroundImage: 'linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)' }}></div>
             </motion.div>
           </div>
 
@@ -50,7 +50,7 @@ export const Inspiration = () => {
                 <span className="text-xs font-bold uppercase tracking-widest opacity-80">Coastal Escape</span>
                 <h3 className="text-4xl font-headline font-bold mt-2">The Hidden Coves of Amalfi</h3>
               </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-transparent via-transparent to-transparent" style={{ backgroundImage: 'linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)' }}></div>
             </motion.div>
           </div>
 
@@ -69,7 +69,7 @@ export const Inspiration = () => {
                 <span className="text-xs font-bold uppercase tracking-widest opacity-80">Architectural Finds</span>
                 <h3 className="text-4xl font-headline font-bold mt-2">Symmetry in the Wild</h3>
               </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-transparent via-transparent to-transparent" style={{ backgroundImage: 'linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)' }}></div>
             </motion.div>
           </div>
 
