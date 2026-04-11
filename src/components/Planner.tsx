@@ -12,13 +12,13 @@ import html2pdf from 'html2pdf.js';
 interface ItineraryDay {
   day: number;
   title: string;
-  mapQuery: string;
   activities: {
     time: string;
     activity: string;
     location: string;
     description: string;
     why: string;
+    howToGetThere?: string;
   }[];
 }
 
@@ -290,6 +290,7 @@ export const Planner = () => {
     try {
       // Use VITE_ prefix for reliable client-side access in Vite/Vercel
       const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
+      const modelName = import.meta.env.VITE_GEMINI_MODEL || "gemini-3-flash-preview";
 
       if (!apiKey || apiKey === "undefined" || apiKey === "null") {
         throw new Error("Gemini API Key is missing. Please ensure VITE_GEMINI_API_KEY is set in your Vercel Environment Variables and that you have REDEPLOYED.");
@@ -346,7 +347,7 @@ export const Planner = () => {
       };
 
       const budgetResponse = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: modelName,
         contents: budgetPrompt,
         config: {
           responseMimeType: "application/json",
@@ -376,9 +377,11 @@ export const Planner = () => {
       - Accommodation: ${details.accommodationType}
       - Avoid: ${selectedAvoid.join(", ")}
       
-      Create a compelling story of what travel you have planned first, then a day-by-day plan that feels intentional and well-paced. For each activity, provide a 'why' explaining why it was chosen for this specific traveler.
+      Create a compelling story of what travel you have planned first, then a day-by-day plan that feels intentional and well-paced. 
       
-      For each day, provide a "mapQuery" which is a string that can be used to search for the day's main locations on Google Maps (e.g., "Eiffel Tower, Louvre Museum, Paris").`;
+      For each activity:
+      1. Provide a 'why' explaining why it was chosen for this specific traveler.
+      2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location.`;
 
       const itinerarySchema = {
         type: Type.OBJECT,
@@ -393,7 +396,6 @@ export const Planner = () => {
               properties: {
                 day: { type: Type.NUMBER },
                 title: { type: Type.STRING },
-                mapQuery: { type: Type.STRING, description: "A comma-separated list of locations for this day to show on a map" },
                 activities: {
                   type: Type.ARRAY,
                   items: {
@@ -403,13 +405,14 @@ export const Planner = () => {
                       activity: { type: Type.STRING },
                       location: { type: Type.STRING },
                       description: { type: Type.STRING },
-                      why: { type: Type.STRING, description: "Brief explanation of why this activity was chosen" }
+                      why: { type: Type.STRING, description: "Brief explanation of why this activity was chosen" },
+                      howToGetThere: { type: Type.STRING, description: "Detailed description of how to get to this location from the previous one" }
                     },
-                    required: ["time", "activity", "location", "description", "why"]
+                    required: ["time", "activity", "location", "description", "why", "howToGetThere"]
                   }
                 }
               },
-              required: ["day", "title", "mapQuery", "activities"]
+              required: ["day", "title", "activities"]
             }
           },
           recommendations: {
@@ -421,7 +424,7 @@ export const Planner = () => {
       };
 
       const itineraryResponse = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: modelName,
         contents: itineraryPrompt,
         config: {
           responseMimeType: "application/json",
@@ -1063,25 +1066,10 @@ export const Planner = () => {
                                 <h4 className="text-2xl font-headline font-bold text-on-background">{day.title}</h4>
                               </div>
 
-                              {/* Map Embed */}
-                              {import.meta.env.VITE_GOOGLE_MAPS_API_KEY && (
-                                <div className="w-full h-[300px] rounded-lg overflow-hidden border editorial-shadow" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
-                                  <iframe
-                                    width="100%"
-                                    height="100%"
-                                    style={{ border: 0 }}
-                                    loading="lazy"
-                                    allowFullScreen
-                                    referrerPolicy="no-referrer-when-downgrade"
-                                    src={`https://www.google.com/maps/embed/v1/search?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(day.mapQuery)}`}
-                                  ></iframe>
-                                </div>
-                              )}
-
-                              <div className="grid gap-6">
+                              <div className="grid gap-8">
                                 {day.activities.map((activity, idx) => (
-                                  <div key={idx} className="bg-surface-container-low rounded-lg p-6 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
-                                    <div className="flex justify-between items-start mb-2">
+                                  <div key={idx} className="bg-surface-container-low rounded-lg p-6 md:p-8 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
+                                    <div className="flex justify-between items-start mb-4">
                                       <span className="text-[10px] font-bold uppercase tracking-widest text-primary px-2 py-1 rounded" style={{ backgroundColor: 'rgba(86, 100, 43, 0.1)' }}>
                                         {activity.time}
                                       </span>
@@ -1089,11 +1077,24 @@ export const Planner = () => {
                                         {activity.location}
                                       </span>
                                     </div>
-                                    <h5 className="text-lg font-bold text-on-surface mb-2">{activity.activity}</h5>
-                                    <p className="text-sm text-on-surface-variant leading-relaxed mb-3">
+                                    <h5 className="text-xl font-headline font-bold text-on-surface mb-3">{activity.activity}</h5>
+                                    <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
                                       {activity.description}
                                     </p>
-                                    <div className="pt-3 border-t" style={{ borderColor: 'rgba(227, 226, 223, 0.3)' }}>
+                                    
+                                    {activity.howToGetThere && (
+                                      <div className="mb-6 p-4 rounded-lg bg-surface-container-highest/30 border border-surface-container-highest flex items-start gap-3">
+                                        <div className="mt-1 p-1 rounded-full bg-primary/10">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                                        </div>
+                                        <div>
+                                          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1 opacity-60">Transit Info</p>
+                                          <p className="text-xs text-on-surface-variant leading-relaxed">{activity.howToGetThere}</p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="pt-4 border-t" style={{ borderColor: 'rgba(227, 226, 223, 0.3)' }}>
                                       <p className="text-[11px] text-primary font-medium italic flex gap-2">
                                         <span className="opacity-50">Why:</span>
                                         {activity.why}
