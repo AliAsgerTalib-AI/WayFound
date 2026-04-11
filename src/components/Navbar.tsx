@@ -7,9 +7,8 @@ export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   const navLinks = [
-    { name: "Destinations", path: "/#destinations" },
+    { name: "Home", path: "/#destinations" },
     { name: "Stories", path: "/#stories" },
-    { name: "Curations", path: "/#curations" },
     { name: "About", path: "/about" },
   ];
 

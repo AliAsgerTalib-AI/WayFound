@@ -28,7 +28,7 @@ const About = () => {
               </div>
               <h3 className="text-2xl font-headline font-bold text-on-background">Our Mission</h3>
               <p className="text-on-surface-variant leading-relaxed">
-                To curate journeys that go beyond the surface. We don't just find you a hotel; we find you a sanctuary. We don't just suggest a restaurant; we find you a story.
+                To curate journeys that go beyond the surface. We don't just find you a hotel; we find you a sanctuary. We do not just suggest a restaurant; we find you a story.
               </p>
             </div>
 
