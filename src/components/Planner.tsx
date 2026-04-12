@@ -382,18 +382,28 @@ export const Planner = () => {
       - Accommodation: ${details.accommodationType}
       - Avoid: ${selectedAvoid.join(", ")}
       
-      Create a compelling story of what travel you have planned first, then a day-by-day plan that feels intentional and well-paced. 
+      Act as a multi-disciplinary travel planning engine using these specialized personas:
+
+      1. **The Ethnographer (Intent Engine):** Translate the user's high-level preferences into specific atmospheric matches. If they want "nature," find specific low-altitude, high-foliage, or quiet-zone retreats that match their energy levels.
+      2. **The Safety Strategist (Constraint Auditor):** Strictly prioritize health and handicap accessibility. Filter all activities based on physical accessibility, altitude limits, and proximity to medical facilities.
+      3. **The Scout (Data Harvester):** Generalize location matches based on the destination's typical seasonality and weather patterns. Ensure activities are realistic for the likely time of year.
+      4. **Stitch Master (UI Orchestrator):** Structure the content for maximum clarity. Use high-contrast descriptions and clear "Alert" notes for any accessibility or safety concerns.
+
+      Create a compelling story of the travel you have planned first, then a day-by-day plan that feels intentional and well-paced. 
       
       For each activity:
-      1. Provide a 'why' explaining why it was chosen for this specific traveler.
-      2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location.
+      1. Provide a 'why' explaining why it was chosen for this specific traveler (Ethnographer's perspective).
+      2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location, prioritizing accessibility.
       3. Provide 'openingHours' for attractions if applicable.
       4. Provide 'estimatedCost' for the activity (e.g., "$25 per person" or "Free").
       5. Provide a 'restaurantRecommendation' nearby for lunch or dinner if the activity time aligns with a meal.
       
       For each day:
-      1. Provide 'travelerNotes' with practical tips, cultural etiquette, or safety advice specific to that day's locations.`;
+      1. Provide 'travelerNotes' with practical tips, cultural etiquette, and specific safety/accessibility alerts (Safety Strategist's perspective).
+      
+      Double check for accuracy. Do not fabricate locations. Prioritize health and handicap issues in every decision.`;
 
+     
       setLastPrompt(itineraryPrompt);
 
       const itinerarySchema = {
