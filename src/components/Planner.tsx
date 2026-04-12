@@ -21,7 +21,12 @@ interface ItineraryDay {
     howToGetThere?: string;
     openingHours?: string;
     estimatedCost?: string;
-    restaurantRecommendation?: string;
+    restaurantRecommendation?: {
+      name: string;
+      cuisine: string;
+      suitability: string;
+      note?: string;
+    } | string;
   }[];
   travelerNotes?: string;
 }
@@ -40,7 +45,6 @@ interface TripDetails {
   duration: number;
   budgetAmount: number;
   numTravelers: number;
-  travelCategory: string;
   accommodationType: string;
   healthNotes: string;
   avoidText: string;
@@ -250,7 +254,6 @@ export const Planner = () => {
     duration: 7,
     budgetAmount: 1000,
     numTravelers: 1,
-    travelCategory: "Leisure",
     accommodationType: "Boutique",
     healthNotes: "",
     avoidText: ""
@@ -373,20 +376,118 @@ export const Planner = () => {
         throw new Error("Failed to parse budget data.");
       }
 
+      // 1.5 Brainstorm Potential Activities (Safety Strategist Persona)
+      const brainstormPrompt = `As the Safety Strategist and Ethnographer, brainstorm a list of 15-20 potential activities and locations in ${details.destination} that align with these interests: ${selectedInterests.join(", ")}.
+      
+      CRITICAL CONSTRAINTS & AGGRESSIVE AVOIDANCES:
+      - EXPLICITLY FILTER OUT and DO NOT RECOMMEND anything that matches these criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
+      - AGGRESSIVELY EXCLUDE activities that are crowded, overly touristy, or generic "must-see" landmarks if they don't align with an "off-the-beaten-path" ethos.
+      - Prioritize hidden gems, local secrets, and quiet, intentional spaces.
+      - Prioritize activities that are generally accessible and do not require extreme physical exertion.
+      - Consider the Health/Accessibility Notes: "${details.healthNotes || "None"}".
+      - Ensure a mix of atmospheric matches (Ethnographer's perspective) and safe, low-impact options.`;
+
+      const brainstormSchema = {
+        type: Type.OBJECT,
+        properties: {
+          activities: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                description: { type: Type.STRING },
+                accessibilityLevel: { type: Type.STRING, description: "e.g., High, Moderate, Low" },
+                physicalExertion: { type: Type.STRING, description: "e.g., Minimal, Moderate, High" }
+              },
+              required: ["name", "description", "accessibilityLevel", "physicalExertion"]
+            }
+          }
+        },
+        required: ["activities"]
+      };
+
+      const brainstormResponse = await ai.models.generateContent({
+        model: modelName,
+        contents: brainstormPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: brainstormSchema
+        }
+      });
+
+      const brainstormedActivities = JSON.parse(brainstormResponse.text || '{"activities":[]}').activities;
+
+      // 1.6 Brainstorm Local Events & Festivals (The Scout Persona)
+      const eventsPrompt = `As The Scout (Data Harvester), identify potential local events, festivals, or seasonal highlights in ${details.destination} for the timing: ${selectedTiming.join(", ") || "current season"}.
+      
+      Focus on:
+      - Cultural festivals, public holidays, or seasonal natural events (e.g., cherry blossoms, Christmas markets).
+      - Events that align with the interests: ${selectedInterests.join(", ")}.
+      - Accessibility for the travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")}).
+      - Consider Health/Accessibility Notes: "${details.healthNotes || "None"}".
+      - STRICTLY AVOID and AGGRESSIVELY FILTER OUT anything matching: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
+      - EXCLUDE mass-market tourist traps or overly commercialized events.`;
+
+      const eventsSchema = {
+        type: Type.OBJECT,
+        properties: {
+          events: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                dateRange: { type: Type.STRING },
+                description: { type: Type.STRING },
+                significance: { type: Type.STRING }
+              },
+              required: ["name", "dateRange", "description", "significance"]
+            }
+          }
+        },
+        required: ["events"]
+      };
+
+      const eventsResponse = await ai.models.generateContent({
+        model: modelName,
+        contents: eventsPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: eventsSchema
+        }
+      });
+
+      const localEvents = JSON.parse(eventsResponse.text || '{"events":[]}').events;
+
       // 2. Generate Itinerary
       const itineraryPrompt = `Generate a bespoke travel itinerary for a ${details.duration}-day trip to ${details.destination}.
       Context:
+      - Origin: ${details.origin || "Not specified"}
       - Travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")})
       - Interests: ${selectedInterests.join(", ")}
       - Travel Style: ${selectedTravelStyles.join(", ")}
+      - Budget Goal: $${details.budgetAmount} (Total)
+      - Timing/Season: ${selectedTiming.join(", ") || "Flexible"}
+      - Languages: ${selectedLanguages.join(", ")}
+      - Food Preferences: ${selectedFood.join(", ") || "No specific preferences"}
       - Accommodation: ${details.accommodationType}
-      - Avoid: ${selectedAvoid.join(", ")}
+      - Health/Accessibility Notes: ${details.healthNotes || "None"}
+      - Avoid: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}
       
+      PRE-SELECTED POTENTIAL ACTIVITIES (Prioritize these):
+      ${brainstormedActivities.map((a: any) => `- ${a.name}: ${a.description} (Accessibility: ${a.accessibilityLevel}, Exertion: ${a.physicalExertion})`).join('\n')}
+
+      LOCAL EVENTS & FESTIVALS (Incorporate if relevant):
+      ${localEvents.map((e: any) => `- ${e.name} (${e.dateRange}): ${e.description}. Significance: ${e.significance}`).join('\n')}
+
       Act as a multi-disciplinary travel planning engine using these specialized personas:
 
       1. **The Ethnographer (Intent Engine):** Translate the user's high-level preferences into specific atmospheric matches. If they want "nature," find specific low-altitude, high-foliage, or quiet-zone retreats that match their energy levels.
-      2. **The Safety Strategist (Constraint Auditor):** Strictly prioritize health and handicap accessibility. Filter all activities based on physical accessibility, altitude limits, and proximity to medical facilities.
-      3. **The Scout (Data Harvester):** Generalize location matches based on the destination's typical seasonality and weather patterns. Ensure activities are realistic for the likely time of year.
+      2. **The Safety Strategist (Constraint Auditor):** Strictly prioritize health and handicap accessibility. AGGRESSIVELY FILTER OUT and DO NOT RECOMMEND any activities, locations, or transit methods that match the avoidance criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}. 
+         Explicitly reject crowded, overly touristy, or generic "tourist trap" locations. Prioritize an "off-the-beaten-path" ethos. 
+         Ensure all activities respect physical accessibility, altitude limits, and proximity to medical facilities. Use the provided Health/Accessibility Notes: "${details.healthNotes || "None"}".
+      3. **The Scout (Data Harvester):** Generalize location matches based on the destination's typical seasonality and weather patterns. Ensure activities are realistic for the likely time of year (${selectedTiming.join(", ") || "current season"}).
       4. **Stitch Master (UI Orchestrator):** Structure the content for maximum clarity. Use high-contrast descriptions and clear "Alert" notes for any accessibility or safety concerns.
 
       Create a compelling story of the travel you have planned first, then a day-by-day plan that feels intentional and well-paced. 
@@ -396,7 +497,9 @@ export const Planner = () => {
       2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location, prioritizing accessibility.
       3. Provide 'openingHours' for attractions if applicable.
       4. Provide 'estimatedCost' for the activity (e.g., "$25 per person" or "Free").
-      5. Provide a 'restaurantRecommendation' nearby for lunch or dinner if the activity time aligns with a meal.
+      5. Provide a 'restaurantRecommendation' nearby for lunch or dinner if the activity time aligns with a meal. 
+         Include the restaurant name, a brief description of the cuisine, and its suitability based on the selected 'Food Preferences': ${selectedFood.join(", ") || "None"}.
+         If no specific recommendation is generated, indicate that by setting the name to "No specific recommendation found".
       
       For each day:
       1. Provide 'travelerNotes' with practical tips, cultural etiquette, and specific safety/accessibility alerts (Safety Strategist's perspective).
@@ -433,7 +536,17 @@ export const Planner = () => {
                       howToGetThere: { type: Type.STRING, description: "Detailed description of how to get to this location from the previous one" },
                       openingHours: { type: Type.STRING, description: "Opening hours for the attraction" },
                       estimatedCost: { type: Type.STRING, description: "Estimated cost for the activity" },
-                      restaurantRecommendation: { type: Type.STRING, description: "A specific restaurant recommendation nearby" }
+                      restaurantRecommendation: { 
+                        type: Type.OBJECT, 
+                        description: "A specific restaurant recommendation nearby",
+                        properties: {
+                          name: { type: Type.STRING },
+                          cuisine: { type: Type.STRING },
+                          suitability: { type: Type.STRING, description: "How it matches the user's food preferences" },
+                          note: { type: Type.STRING, description: "A brief tip or why it's recommended" }
+                        },
+                        required: ["name", "cuisine", "suitability"]
+                      }
                     },
                     required: ["time", "activity", "location", "description", "why", "howToGetThere"]
                   }
@@ -791,19 +904,6 @@ export const Planner = () => {
                   </div>
                 </div>
                 <div className="space-y-8">
-                  <div className="space-y-2">
-                    <label htmlFor="travelCategory" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Category</label>
-                    <select 
-                      id="travelCategory"
-                      className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors"
-                      value={details.travelCategory}
-                      onChange={(e) => updateDetail("travelCategory", e.target.value)}
-                    >
-                      <option>Leisure</option>
-                      <option>Business</option>
-                      <option>Workation</option>
-                    </select>
-                  </div>
                   <div className="space-y-4">
                     <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Style <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></label>
                     <div className="flex flex-wrap gap-3">
@@ -1147,7 +1247,22 @@ export const Planner = () => {
                                         <Utensils className="w-4 h-4 text-primary shrink-0 mt-1" />
                                         <div>
                                           <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1 opacity-80">Dining Recommendation</p>
-                                          <p className="text-xs text-on-surface-variant leading-relaxed italic">"{activity.restaurantRecommendation}"</p>
+                                          {typeof activity.restaurantRecommendation === 'string' ? (
+                                            <p className="text-xs text-on-surface-variant leading-relaxed italic">"{activity.restaurantRecommendation}"</p>
+                                          ) : (
+                                            activity.restaurantRecommendation.name.toLowerCase().includes("no specific recommendation") ? (
+                                              <p className="text-xs text-on-surface-variant opacity-60 italic">No specific recommendation found for this time/location.</p>
+                                            ) : (
+                                              <div className="space-y-1">
+                                                <p className="text-sm font-bold text-on-surface">{activity.restaurantRecommendation.name}</p>
+                                                <p className="text-xs text-on-surface-variant"><span className="font-medium">Cuisine:</span> {activity.restaurantRecommendation.cuisine}</p>
+                                                <p className="text-xs text-on-surface-variant"><span className="font-medium">Suitability:</span> {activity.restaurantRecommendation.suitability}</p>
+                                                {activity.restaurantRecommendation.note && (
+                                                  <p className="text-xs text-on-surface-variant italic mt-1 opacity-80">{activity.restaurantRecommendation.note}</p>
+                                                )}
+                                              </div>
+                                            )
+                                          )}
                                         </div>
                                       </div>
                                     )}
