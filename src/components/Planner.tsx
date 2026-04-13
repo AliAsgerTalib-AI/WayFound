@@ -585,7 +585,7 @@ export const Planner = () => {
       Create a compelling story of the travel you have planned first, then a day-by-day plan that feels intentional and well-paced. 
       
       For each activity:
-      1. Provide a 'why' field. This field MUST explain, from the perspective of the Ethnographer persona, why the activity was specifically chosen for the user's interests (${selectedInterests.join(", ")}) and travel style (${selectedTravelStyles.join(", ")}).
+      1. Provide a detailed 'why' field. This field MUST explain, from the perspective of the Ethnographer persona, why the activity was specifically chosen for the user's interests (${selectedInterests.join(", ")}) and travel style (${selectedTravelStyles.join(", ")}). Explicitly reference the Ethnographer's intent, such as 'finding quiet moments', 'experiencing local craft', 'cultural immersion', or 'atmospheric matching'.
       2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location, prioritizing accessibility.
       3. Provide 'openingHours' for attractions if applicable.
       4. Provide 'estimatedCost' for the activity (e.g., "$25 per person" or "Free").
@@ -631,7 +631,7 @@ export const Planner = () => {
                       activity: { type: Type.STRING },
                       location: { type: Type.STRING },
                       description: { type: Type.STRING },
-                      why: { type: Type.STRING, description: "Ethnographer's explanation of why this activity matches the user's specific interests and travel style" },
+                      why: { type: Type.STRING, description: "Detailed Ethnographer's explanation of why this activity matches the user's specific interests and travel style, explicitly referencing the persona's intent (e.g., finding quiet moments, local craft immersion)." },
                       howToGetThere: { type: Type.STRING, description: "Detailed description of how to get to this location from the previous one" },
                       openingHours: { type: Type.STRING, description: "Opening hours for the attraction" },
                       estimatedCost: { type: Type.STRING, description: "Estimated cost for the activity" },
@@ -1306,9 +1306,9 @@ export const Planner = () => {
                 {itinerary && (
                   <div className="space-y-12">
                     {/* Story Section */}
-                    <div className="bg-surface-container-low rounded-lg p-6 md:p-8 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
+                    <div className="bg-surface-container-low rounded-lg p-5 md:p-8 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
                       <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-primary mb-6">The Story</h3>
-                      <p className="text-lg text-on-surface leading-relaxed font-serif italic">
+                      <p className="text-base md:text-lg text-on-surface leading-relaxed font-serif italic">
                         {itinerary.story}
                       </p>
                     </div>
@@ -1334,31 +1334,31 @@ export const Planner = () => {
 
                       <div className="space-y-12">
                         {itinerary.days.map((day) => (
-                          <div key={day.day} className="relative pl-8 border-l" style={{ borderColor: 'rgba(86, 100, 43, 0.2)' }}>
+                          <div key={day.day} className="relative pl-6 md:pl-8 border-l" style={{ borderColor: 'rgba(86, 100, 43, 0.2)' }}>
                             <div className="absolute -left-3 top-0 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-on-primary">
                               {day.day}
                             </div>
                             <div className="space-y-6">
-                              <div className="flex flex-col md:flex-row md:items-baseline gap-2">
-                                <h4 className="text-2xl font-headline font-bold text-on-background">{day.title}</h4>
-                                <span className="text-xs font-bold text-primary uppercase tracking-widest">
+                              <div className="flex flex-col md:flex-row md:items-baseline gap-1 md:gap-2">
+                                <h4 className="text-xl md:text-2xl font-headline font-bold text-on-background">{day.title}</h4>
+                                <span className="text-[10px] md:text-xs font-bold text-primary uppercase tracking-widest">
                                   {new Date(day.date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
                                 </span>
                               </div>
 
-                              <div className="grid gap-8">
+                              <div className="grid gap-6 md:gap-8">
                                 {day.activities.map((activity, idx) => (
-                                  <div key={idx} className="bg-surface-container-low rounded-lg p-6 md:p-8 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
-                                    <div className="flex justify-between items-start mb-4">
-                                      <span className="text-[10px] font-bold uppercase tracking-widest text-primary px-2 py-1 rounded" style={{ backgroundColor: 'rgba(86, 100, 43, 0.1)' }}>
+                                  <div key={idx} className="bg-surface-container-low rounded-lg p-5 md:p-8 editorial-shadow border" style={{ borderColor: 'rgba(227, 226, 223, 0.5)' }}>
+                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-4">
+                                      <span className="w-fit text-[10px] font-bold uppercase tracking-widest text-primary px-2 py-1 rounded" style={{ backgroundColor: 'rgba(86, 100, 43, 0.1)' }}>
                                         {activity.time}
                                       </span>
                                       <span className="text-[10px] font-medium text-on-surface-variant italic">
                                         {activity.location}
                                       </span>
                                     </div>
-                                    <h5 className="text-xl font-headline font-bold text-on-surface mb-3">{activity.activity}</h5>
-                                    <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
+                                    <h5 className="text-lg md:text-xl font-headline font-bold text-on-surface mb-3">{activity.activity}</h5>
+                                    <p className="text-xs md:text-sm text-on-surface-variant leading-relaxed mb-4">
                                       {activity.description}
                                     </p>
                                     
@@ -1431,16 +1431,16 @@ export const Planner = () => {
                               </div>
 
                               {day.travelerNotes && (
-                                <div className="mt-8 p-6 rounded-xl bg-surface-container-highest/20 border border-surface-container-highest/50 relative overflow-hidden">
+                                <div className="mt-6 md:mt-8 p-5 md:p-6 rounded-xl bg-surface-container-highest/20 border border-surface-container-highest/50 relative overflow-hidden">
                                   <div className="absolute top-0 right-0 p-4 opacity-10">
-                                    <BookOpen className="w-12 h-12 text-primary" />
+                                    <BookOpen className="w-10 h-10 md:w-12 md:h-12 text-primary" />
                                   </div>
                                   <div className="relative z-10">
-                                    <h5 className="text-xs font-bold uppercase tracking-widest text-primary mb-3 flex items-center gap-2">
+                                    <h5 className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-primary mb-3 flex items-center gap-2">
                                       <Zap className="w-3 h-3" />
                                       Notes for the Traveler
                                     </h5>
-                                    <p className="text-sm text-on-surface-variant leading-relaxed italic">
+                                    <p className="text-xs md:text-sm text-on-surface-variant leading-relaxed italic">
                                       {day.travelerNotes}
                                     </p>
                                   </div>

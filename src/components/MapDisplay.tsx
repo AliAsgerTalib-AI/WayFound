@@ -47,7 +47,7 @@ export const MapDisplay: React.FC<MapDisplayProps> = ({ locations, center }) => 
   if (locations.length === 0) return null;
 
   return (
-    <div className="w-full h-[400px] rounded-xl overflow-hidden border border-surface-container-highest shadow-sm mb-8 z-0">
+    <div className="w-full h-[300px] md:h-[400px] rounded-xl overflow-hidden border border-surface-container-highest shadow-sm mb-8 z-0">
       <MapContainer 
         center={mapCenter} 
         zoom={13} 
