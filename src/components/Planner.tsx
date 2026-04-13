@@ -11,6 +11,7 @@ import html2pdf from 'html2pdf.js';
 
 interface ItineraryDay {
   day: number;
+  date: string;
   title: string;
   activities: {
     time: string;
@@ -35,6 +36,8 @@ interface ItineraryData {
   title: string;
   story: string;
   destination: string;
+  startDate: string;
+  timingReason: string;
   days: ItineraryDay[];
   recommendations: string[];
 }
@@ -42,10 +45,10 @@ interface ItineraryData {
 interface TripDetails {
   origin: string;
   destination: string;
+  startDate: string;
   duration: number;
   budgetAmount: number;
   numTravelers: number;
-  accommodationType: string;
   healthNotes: string;
   avoidText: string;
 }
@@ -136,52 +139,69 @@ const FOOD_PREFERENCES = [
 
 const TRAVEL_TYPES = [
   "Solo Traveler",
+  "Solo Female Traveler",
   "Couple / Romantic",
+  "Family with kids",
   "Family (General)",
   "Family with Infants/Toddlers",
   "Family with Teens",
   "Multi-generational Family",
   "Group of Friends",
   "Large Group (10+)",
+  "Senior Citizen",
+  "Business Traveler",
+  "Digital Nomad",
+  "Backpacker",
+  "Adventure Seeker",
   "Pet-Friendly (Traveling with Pets)",
-  "Mobility Accessible (Wheelchair/Walker)"
+  "Mobility Accessible (Wheelchair/Walker)",
+  "Accessible Travel (Specific Needs)"
 ];
 
 const TRAVEL_STYLES = [
-  "Slow & Immersive (1-2 main activities/day)",
-  "Moderate (Balanced exploration & rest)",
-  "Fast-Paced (High density / Snapshot tour)",
-  "Efficient & Optimized (Minimum transit, maximum sites)",
-  "Shoestring / Backpacker (Hostels & Street Food)",
-  "Budget-Friendly (Value-focused, public transit)",
-  "Mid-Range (Boutique hotels, mix of dining)",
-  "Luxury (High-end amenities, private transit)",
-  "Ultra-Luxury (Exclusive access, concierge-led)",
-  "Cultural & Heritage (Museums, Landmarks)",
-  "Adventure & Active (Physical exertion focus)",
-  "Health & Wellness (Spa, Yoga, Longevity)",
-  "Off-the-Beaten-Path (Non-tourist, local secrets)",
-  "Eco-Conscious / Sustainable (Low-impact sites)",
-  "Educational / Deep-Dive (Guided, academic context)",
+  "Slow & Immersive",
+  "Moderate / Balanced",
+  "Fast-Paced",
+  "Adventure & Active",
+  "Cultural & Heritage",
+  "Health & Wellness",
+  "Off-the-Beaten-Path",
+  "Eco-Conscious",
+  "Educational"
 ];
 
- 
+const ACCOMMODATION_TYPES = [
+  "Hostels / Social",
+  "Budget Hotels",
+  "Boutique Hotels",
+  "Luxury Resorts",
+  "Ultra-Luxury / Exclusive",
+  "Vacation Rentals (Airbnb/VRBO)",
+  "Unique Stays (Glamping, Ryokans, etc.)",
+  "Business Hotels"
+];
+
 const TRAVEL_STYLE_ICONS: Record<string, any> = {
-  "Slow & Immersive (1-2 main activities/day)": Clock,
-  "Moderate (Balanced exploration & rest)": Activity,
-  "Fast-Paced (High density / Snapshot tour)": Zap,
-  "Efficient & Optimized (Minimum transit, maximum sites)": Target,
-  "Shoestring / Backpacker (Hostels & Street Food)": Backpack,
-  "Budget-Friendly (Value-focused, public transit)": Wallet,
-  "Mid-Range (Boutique hotels, mix of dining)": Coins,
-  "Luxury (High-end amenities, private transit)": Crown,
-  "Ultra-Luxury (Exclusive access, concierge-led)": Gem,
-  "Cultural & Heritage (Museums, Landmarks)": Landmark,
-  "Adventure & Active (Physical exertion focus)": Mountain,
-  "Health & Wellness (Spa, Yoga, Longevity)": Heart,
-  "Off-the-Beaten-Path (Non-tourist, local secrets)": Compass,
-  "Eco-Conscious / Sustainable (Low-impact sites)": Leaf,
-  "Educational / Deep-Dive (Guided, academic context)": BookOpen,
+  "Slow & Immersive": Clock,
+  "Moderate / Balanced": Activity,
+  "Fast-Paced": Zap,
+  "Adventure & Active": Mountain,
+  "Cultural & Heritage": Landmark,
+  "Health & Wellness": Heart,
+  "Off-the-Beaten-Path": Compass,
+  "Eco-Conscious": Leaf,
+  "Educational": BookOpen,
+};
+
+const ACCOMMODATION_ICONS: Record<string, any> = {
+  "Hostels / Social": Users,
+  "Budget Hotels": Wallet,
+  "Boutique Hotels": Gem,
+  "Luxury Resorts": Crown,
+  "Ultra-Luxury / Exclusive": ShieldCheck,
+  "Vacation Rentals (Airbnb/VRBO)": MapPin,
+  "Unique Stays (Glamping, Ryokans, etc.)": Mountain,
+  "Business Hotels": Backpack,
 };
 
 const AVOID_SUGGESTIONS = [
@@ -251,10 +271,10 @@ export const Planner = () => {
   const [details, setDetails] = useState<TripDetails>({
     origin: "",
     destination: "",
+    startDate: "",
     duration: 7,
     budgetAmount: 1000,
     numTravelers: 1,
-    accommodationType: "Boutique",
     healthNotes: "",
     avoidText: ""
   });
@@ -262,8 +282,9 @@ export const Planner = () => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-  const [selectedTravelTypes, setSelectedTravelTypes] = useState<string[]>(["Solo"]);
-  const [selectedTravelStyles, setSelectedTravelStyles] = useState<string[]>(["Slow Travel"]);
+  const [selectedTravelTypes, setSelectedTravelTypes] = useState<string[]>(["Solo Traveler"]);
+  const [selectedTravelStyles, setSelectedTravelStyles] = useState<string[]>(["Slow & Immersive"]);
+  const [selectedAccommodationTypes, setSelectedAccommodationTypes] = useState<string[]>(["Boutique Hotels"]);
   const [selectedTiming, setSelectedTiming] = useState<string[]>([]);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["English only"]);
   const [selectedFood, setSelectedFood] = useState<string[]>([]);
@@ -310,20 +331,33 @@ export const Planner = () => {
 
       const ai = new GoogleGenAI({ apiKey });
 
+      const timingContext = details.startDate 
+        ? `starting on ${details.startDate}` 
+        : (selectedTiming.length > 0 
+            ? `during ${selectedTiming.join(", ")}` 
+            : "Optimized by AI based on the other preferences");
+
       // 1. Generate Budget
-      const budgetPrompt = `Generate a detailed travel budget breakdown for a trip to ${details.destination}.
+      const budgetPrompt = `Generate a highly granular travel budget breakdown for a trip to ${details.destination}.
+      
       Trip Details:
       - Duration: ${details.duration} days
       - Travel Style: ${selectedTravelStyles.join(", ")}
+      - Accommodation Style: ${selectedAccommodationTypes.join(", ")}
       - Number of Travelers: ${details.numTravelers}
       - Total Budget Goal: $${details.budgetAmount}
       
+      CRITICAL BUDGETING FACTORS:
+      1. **Destination Cost of Living:** Adjust all estimates based on the specific economic reality of ${details.destination}. Consider local prices for coffee, street food, mid-range dining, and public transit.
+      2. **Travel Style Alignment:** If the style is "Luxury," prioritize high-end dining and private transit. If "Shoestring," prioritize hostels and free activities.
+      3. **Granularity:** Provide specific examples of what the money buys in each category (e.g., "Average cost of a 3-course dinner for two: $80", "Typical museum entry: $15").
+      
       Provide realistic estimates for:
-      1. Accommodation
-      2. Food & Drink
-      3. Transportation (local)
-      4. Activities & Sightseeing
-      5. Miscellaneous (SIM cards, tips, etc.)
+      1. Accommodation (aligned with ${selectedAccommodationTypes.join(", ")})
+      2. Food & Drink (including breakdown of breakfast, lunch, dinner, and snacks)
+      3. Transportation (local transit, taxis, or rentals)
+      4. Activities & Sightseeing (specific to ${selectedInterests.join(", ")})
+      5. Miscellaneous (SIM cards, tips, laundry, etc.)
       
       Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
 
@@ -342,12 +376,17 @@ export const Planner = () => {
                 dailyEstimate: { type: Type.NUMBER },
                 totalEstimate: { type: Type.NUMBER },
                 description: { type: Type.STRING },
+                breakdown: { 
+                  type: Type.ARRAY, 
+                  items: { type: Type.STRING },
+                  description: "Granular cost examples (e.g., 'Coffee: $4', 'Dinner: $30')"
+                },
                 icon: { 
                   type: Type.STRING,
                   enum: ["home", "food", "transport", "activities", "other"]
                 }
               },
-              required: ["category", "dailyEstimate", "totalEstimate", "description", "icon"]
+              required: ["category", "dailyEstimate", "totalEstimate", "description", "icon", "breakdown"]
             }
           }
         },
@@ -377,14 +416,22 @@ export const Planner = () => {
       }
 
       // 1.5 Brainstorm Potential Activities (Safety Strategist Persona)
-      const brainstormPrompt = `As the Safety Strategist and Ethnographer, brainstorm a list of 15-20 potential activities and locations in ${details.destination} that align with these interests: ${selectedInterests.join(", ")}.
+      const brainstormPrompt = `As the Safety Strategist (Lead Auditor) and Ethnographer, brainstorm a list of 15-20 potential activities and locations in ${details.destination} that align with these interests: ${selectedInterests.join(", ")}.
+      
+      Traveler Profile:
+      - Travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")})
+      - Travel Style: ${selectedTravelStyles.join(", ")}
+      
+      MANDATORY SAFETY & ACCESSIBILITY AUDIT (Safety Strategist):
+      - YOUR PRIMARY MISSION is to ensure the safety and physical comfort of the traveler.
+      - AGGRESSIVELY PRIORITIZE the Health/Accessibility Notes: "${details.healthNotes || "None"}".
+      - If an activity poses ANY risk or physical strain beyond the traveler's noted limits, EXCLUDE IT IMMEDIATELY.
+      - Prioritize activities that are generally accessible and do not require extreme physical exertion.
       
       CRITICAL CONSTRAINTS & AGGRESSIVE AVOIDANCES:
       - EXPLICITLY FILTER OUT and DO NOT RECOMMEND anything that matches these criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
       - AGGRESSIVELY EXCLUDE activities that are crowded, overly touristy, or generic "must-see" landmarks if they don't align with an "off-the-beaten-path" ethos.
       - Prioritize hidden gems, local secrets, and quiet, intentional spaces.
-      - Prioritize activities that are generally accessible and do not require extreme physical exertion.
-      - Consider the Health/Accessibility Notes: "${details.healthNotes || "None"}".
       - Ensure a mix of atmospheric matches (Ethnographer's perspective) and safe, low-impact options.`;
 
       const brainstormSchema = {
@@ -419,13 +466,18 @@ export const Planner = () => {
       const brainstormedActivities = JSON.parse(brainstormResponse.text || '{"activities":[]}').activities;
 
       // 1.6 Brainstorm Local Events & Festivals (The Scout Persona)
-      const eventsPrompt = `As The Scout (Data Harvester), identify potential local events, festivals, or seasonal highlights in ${details.destination} for the timing: ${selectedTiming.join(", ") || "current season"}.
+      const eventsPrompt = `As The Scout (Data Harvester) and Safety Strategist (Auditor), identify potential local events, festivals, or seasonal highlights in ${details.destination} for the timing: ${timingContext} (and the following ${details.duration} days).
+      
+      SAFETY STRATEGIST OVERRIDE:
+      - You MUST audit every event for accessibility and crowd density.
+      - If an event is known for overwhelming crowds or lack of accessibility, it MUST be excluded.
+      - Consider Health/Accessibility Notes: "${details.healthNotes || "None"}".
       
       Focus on:
       - Cultural festivals, public holidays, or seasonal natural events (e.g., cherry blossoms, Christmas markets).
       - Events that align with the interests: ${selectedInterests.join(", ")}.
       - Accessibility for the travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")}).
-      - Consider Health/Accessibility Notes: "${details.healthNotes || "None"}".
+      - Provide specific details on how to access the event and any associated costs.
       - STRICTLY AVOID and AGGRESSIVELY FILTER OUT anything matching: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
       - EXCLUDE mass-market tourist traps or overly commercialized events.`;
 
@@ -440,9 +492,11 @@ export const Planner = () => {
                 name: { type: Type.STRING },
                 dateRange: { type: Type.STRING },
                 description: { type: Type.STRING },
-                significance: { type: Type.STRING }
+                significance: { type: Type.STRING },
+                accessDetails: { type: Type.STRING, description: "How to access the event (transit, tickets, etc.)" },
+                estimatedCost: { type: Type.STRING, description: "Estimated cost or if it's free" }
               },
-              required: ["name", "dateRange", "description", "significance"]
+              required: ["name", "dateRange", "description", "significance", "accessDetails", "estimatedCost"]
             }
           }
         },
@@ -461,39 +515,59 @@ export const Planner = () => {
       const localEvents = JSON.parse(eventsResponse.text || '{"events":[]}').events;
 
       // 2. Generate Itinerary
-      const itineraryPrompt = `Generate a bespoke travel itinerary for a ${details.duration}-day trip to ${details.destination}.
+      const itineraryPrompt = `Generate a bespoke travel itinerary for a ${details.duration}-day trip to ${details.destination} ${timingContext}.
+      
+      DETERMINE TRAVEL DATES:
+      - CURRENT DATE: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+      - ALL DETERMINED DATES MUST BE IN THE FUTURE (2026 or later).
+      - If a specific start date was provided (${details.startDate || "None"}), use it.
+      - If only a season or timing was provided (${selectedTiming.join(", ") || "None"}), pick a specific, realistic start date within that window in the FUTURE.
+      - If no timing was provided, pick the most optimal start date for this destination in the FUTURE.
+      - Use this determined start date to plan all activities, considering day-of-week availability (e.g., museums closed on Mondays).
+      
       Context:
       - Origin: ${details.origin || "Not specified"}
       - Travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")})
       - Interests: ${selectedInterests.join(", ")}
       - Travel Style: ${selectedTravelStyles.join(", ")}
+      - Accommodation Style: ${selectedAccommodationTypes.join(", ")}
       - Budget Goal: $${details.budgetAmount} (Total)
-      - Timing/Season: ${selectedTiming.join(", ") || "Flexible"}
+      - Timing/Season: ${timingContext}
       - Languages: ${selectedLanguages.join(", ")}
       - Food Preferences: ${selectedFood.join(", ") || "No specific preferences"}
-      - Accommodation: ${details.accommodationType}
       - Health/Accessibility Notes: ${details.healthNotes || "None"}
       - Avoid: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}
       
       PRE-SELECTED POTENTIAL ACTIVITIES (Prioritize these):
       ${brainstormedActivities.map((a: any) => `- ${a.name}: ${a.description} (Accessibility: ${a.accessibilityLevel}, Exertion: ${a.physicalExertion})`).join('\n')}
 
-      LOCAL EVENTS & FESTIVALS (Incorporate if relevant):
-      ${localEvents.map((e: any) => `- ${e.name} (${e.dateRange}): ${e.description}. Significance: ${e.significance}`).join('\n')}
+      LOCAL EVENTS & FESTIVALS (Incorporate if relevant, include access and cost):
+      ${localEvents.map((e: any) => `- ${e.name} (${e.dateRange}): ${e.description}. Access: ${e.accessDetails}. Cost: ${e.estimatedCost}`).join('\n')}
 
       Act as a multi-disciplinary travel planning engine using these specialized personas:
 
-      1. **The Ethnographer (Intent Engine):** Translate the user's high-level preferences into specific atmospheric matches. If they want "nature," find specific low-altitude, high-foliage, or quiet-zone retreats that match their energy levels.
-      2. **The Safety Strategist (Constraint Auditor):** Strictly prioritize health and handicap accessibility. AGGRESSIVELY FILTER OUT and DO NOT RECOMMEND any activities, locations, or transit methods that match the avoidance criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}. 
-         Explicitly reject crowded, overly touristy, or generic "tourist trap" locations. Prioritize an "off-the-beaten-path" ethos. 
-         Ensure all activities respect physical accessibility, altitude limits, and proximity to medical facilities. Use the provided Health/Accessibility Notes: "${details.healthNotes || "None"}".
-      3. **The Scout (Data Harvester):** Generalize location matches based on the destination's typical seasonality and weather patterns. Ensure activities are realistic for the likely time of year (${selectedTiming.join(", ") || "current season"}).
+      1. **The Ethnographer (Intent Engine):** Translate the user's high-level preferences into specific atmospheric matches. 
+         - For **Digital Nomads**, prioritize locations with reliable connectivity and "work-friendly" atmospheres.
+         - For **Backpackers** and **Adventure Seekers**, prioritize social hubs, rugged landscapes, and high-energy experiences.
+         - For **Solo Female Travelers**, prioritize highly-rated, safe, and welcoming community spaces.
+         - For **Senior Citizens**, prioritize comfort, easy access, and well-paced cultural immersion.
+      2. **The Safety Strategist (Lead Auditor):** You have the final veto on all suggestions. 
+         - For **Solo Female Travelers**, AGGRESSIVELY AUDIT for safety, well-lit areas, and secure transit.
+         - For **Accessible Travel (Specific Needs)** and **Mobility Accessible**, ensure 100% step-free or assisted access.
+         - For **Senior Citizens**, prioritize low-exertion activities and proximity to facilities.
+         - For **Family with kids** and **Family with Infants/Toddlers**, prioritize safety, child-friendly amenities, and engaging but safe environments.
+         - AGGRESSIVELY PRIORITIZE the Health/Accessibility Notes: "${details.healthNotes || "None"}".
+         - AGGRESSIVELY FILTER OUT and DO NOT RECOMMEND any activities, locations, or transit methods that match the avoidance criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}. 
+         - Explicitly reject crowded, overly touristy, or generic "tourist trap" locations. Prioritize an "off-the-beaten-path" ethos. 
+      3. **The Scout (Data Harvester):** Generalize location matches based on the destination's typical seasonality and weather patterns. 
+         - For **Business Travelers**, prioritize efficiency, proximity to transit hubs, and time-saving routes.
+         - Ensure activities are realistic for the likely time of year (${selectedTiming.join(", ") || "current season"}).
       4. **Stitch Master (UI Orchestrator):** Structure the content for maximum clarity. Use high-contrast descriptions and clear "Alert" notes for any accessibility or safety concerns.
 
       Create a compelling story of the travel you have planned first, then a day-by-day plan that feels intentional and well-paced. 
       
       For each activity:
-      1. Provide a 'why' explaining why it was chosen for this specific traveler (Ethnographer's perspective).
+      1. Provide a 'why' field. This field MUST explain, from the perspective of the Ethnographer persona, why the activity was specifically chosen for the user's interests (${selectedInterests.join(", ")}) and travel style (${selectedTravelStyles.join(", ")}).
       2. Provide 'howToGetThere' with specific transit instructions (walking, metro, taxi, etc.) from the previous location, prioritizing accessibility.
       3. Provide 'openingHours' for attractions if applicable.
       4. Provide 'estimatedCost' for the activity (e.g., "$25 per person" or "Free").
@@ -502,7 +576,10 @@ export const Planner = () => {
          If no specific recommendation is generated, indicate that by setting the name to "No specific recommendation found".
       
       For each day:
-      1. Provide 'travelerNotes' with practical tips, cultural etiquette, and specific safety/accessibility alerts (Safety Strategist's perspective).
+      1. Provide 'date' (YYYY-MM-DD).
+      2. Provide 'travelerNotes' with practical tips, cultural etiquette, and specific safety/accessibility alerts (Safety Strategist's perspective).
+      
+      Finally, provide a 'timingReason' explaining why this specific travel period/start date was chosen or is optimal for this destination and these preferences.
       
       Double check for accuracy. Do not fabricate locations. Prioritize health and handicap issues in every decision.`;
 
@@ -515,12 +592,15 @@ export const Planner = () => {
           title: { type: Type.STRING },
           story: { type: Type.STRING, description: "A compelling narrative of the planned journey" },
           destination: { type: Type.STRING },
+          startDate: { type: Type.STRING, description: "The determined start date for the trip (YYYY-MM-DD)" },
+          timingReason: { type: Type.STRING, description: "Explanation of why this travel period was chosen" },
           days: {
             type: Type.ARRAY,
             items: {
               type: Type.OBJECT,
               properties: {
                 day: { type: Type.NUMBER },
+                date: { type: Type.STRING, description: "The specific date for this day (YYYY-MM-DD)" },
                 title: { type: Type.STRING },
                 travelerNotes: { type: Type.STRING, description: "Practical tips and notes for the traveler for this day" },
                 activities: {
@@ -532,7 +612,7 @@ export const Planner = () => {
                       activity: { type: Type.STRING },
                       location: { type: Type.STRING },
                       description: { type: Type.STRING },
-                      why: { type: Type.STRING, description: "Brief explanation of why this activity was chosen" },
+                      why: { type: Type.STRING, description: "Ethnographer's explanation of why this activity matches the user's specific interests and travel style" },
                       howToGetThere: { type: Type.STRING, description: "Detailed description of how to get to this location from the previous one" },
                       openingHours: { type: Type.STRING, description: "Opening hours for the attraction" },
                       estimatedCost: { type: Type.STRING, description: "Estimated cost for the activity" },
@@ -552,7 +632,7 @@ export const Planner = () => {
                   }
                 }
               },
-              required: ["day", "title", "activities"]
+              required: ["day", "date", "title", "activities"]
             }
           },
           recommendations: {
@@ -560,7 +640,7 @@ export const Planner = () => {
             items: { type: Type.STRING }
           }
         },
-        required: ["title", "story", "destination", "days"]
+        required: ["title", "story", "destination", "startDate", "timingReason", "days"]
       };
 
       const itineraryResponse = await ai.models.generateContent({
@@ -824,6 +904,20 @@ export const Planner = () => {
                   </AnimatePresence>
                 </div>
                 <div className="space-y-2">
+                  <label htmlFor="startDate" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Travel Date</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
+                    <input 
+                      id="startDate"
+                      className="w-full bg-surface-container-low border-0 rounded-lg p-4 pl-12 focus:bg-surface-container-highest focus:ring-0 transition-colors" 
+                      type="date"
+                      min={new Date().toISOString().split('T')[0]}
+                      value={details.startDate}
+                      onChange={(e) => updateDetail("startDate", e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
                   <label htmlFor="duration" className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">DURATION (Days)</label>
                   <div className="relative">
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
@@ -889,7 +983,15 @@ export const Planner = () => {
                     {TRAVEL_TYPES
                       .filter(item => {
                         if (details.numTravelers === 1) {
-                          return item === "Solo Traveler" || item.includes("Pet-Friendly") || item.includes("Mobility");
+                          const soloFriendly = [
+                            "Solo Traveler", 
+                            "Solo Female Traveler", 
+                            "Business Traveler", 
+                            "Digital Nomad", 
+                            "Backpacker", 
+                            "Adventure Seeker"
+                          ];
+                          return soloFriendly.includes(item) || item.includes("Pet-Friendly") || item.includes("Accessible");
                         }
                         return true;
                       })
@@ -918,28 +1020,26 @@ export const Planner = () => {
                       ))}
                     </div>
                   </div>
+                  <div className="space-y-4">
+                    <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant px-2">Accommodation Type <span className="text-[10px] font-normal lowercase opacity-70">(pick all that apply)</span></label>
+                    <div className="flex flex-wrap gap-3">
+                      {ACCOMMODATION_TYPES.map((item) => (
+                        <SelectionChip
+                          key={item}
+                          label={item}
+                          isSelected={selectedAccommodationTypes.includes(item)}
+                          onClick={() => toggleItem(selectedAccommodationTypes, setSelectedAccommodationTypes, item)}
+                          icon={ACCOMMODATION_ICONS[item]}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </FormSection>
 
             {/* Travel Preferences */}
-            <FormSection title="Travel Preferences" icon={<Compass className="w-5 h-5" />}>
-              <div className="space-y-8">
-                <div className="space-y-4">
-                  <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Accommodation Type</label>
-                  <div className="flex flex-wrap gap-3">
-                    {["Hotel", "Hostel", "Airbnb", "Boutique"].map((item) => (
-                      <SelectionChip
-                        key={item}
-                        label={item}
-                        isSelected={details.accommodationType === item}
-                        onClick={() => updateDetail("accommodationType", item)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </FormSection>
+            {/* Removed redundant section */}
           </motion.div>
         )}
 
@@ -1160,6 +1260,17 @@ export const Planner = () => {
               >
                 <div className="text-center space-y-4">
                   <h2 className="text-4xl font-headline font-bold text-primary">Your Bespoke Journey</h2>
+                  <div className="flex items-center justify-center gap-2 text-primary font-bold uppercase tracking-widest text-xs">
+                    <Calendar className="w-4 h-4" />
+                    {itinerary ? new Date(itinerary.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : (details.startDate 
+                      ? new Date(details.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                      : (selectedTiming.length > 0 ? selectedTiming.join(", ") : "Optimized by AI"))}
+                  </div>
+                  {itinerary?.timingReason && (
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60 mt-2">
+                      {itinerary.timingReason}
+                    </p>
+                  )}
                   <p className="text-on-surface-variant max-w-lg mx-auto italic">
                     "A journey of a thousand miles begins with a single step, and a well-crafted plan."
                   </p>
@@ -1189,8 +1300,11 @@ export const Planner = () => {
                               {day.day}
                             </div>
                             <div className="space-y-6">
-                              <div>
+                              <div className="flex flex-col md:flex-row md:items-baseline gap-2">
                                 <h4 className="text-2xl font-headline font-bold text-on-background">{day.title}</h4>
+                                <span className="text-xs font-bold text-primary uppercase tracking-widest">
+                                  {new Date(day.date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                                </span>
                               </div>
 
                               <div className="grid gap-8">

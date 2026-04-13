@@ -10,6 +10,7 @@ export interface BudgetCategory {
   totalEstimate: number;
   description: string;
   icon: BudgetIconType;
+  breakdown?: string[];
 }
 
 export interface BudgetData {
@@ -136,10 +137,21 @@ export const BudgetBreakdown: React.FC<BudgetBreakdownProps> = ({ data, duration
                     />
                   </div>
                 ) : (
-                  <>
-                    <h5 className="text-sm font-bold text-on-surface">{cat.category}</h5>
-                    <p className="text-xs text-on-surface-variant leading-tight">{cat.description}</p>
-                  </>
+                  <div className="space-y-2">
+                    <div>
+                      <h5 className="text-sm font-bold text-on-surface">{cat.category}</h5>
+                      <p className="text-xs text-on-surface-variant leading-tight">{cat.description}</p>
+                    </div>
+                    {cat.breakdown && cat.breakdown.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {cat.breakdown.map((item, bIdx) => (
+                          <span key={bIdx} className="px-2 py-0.5 rounded-full bg-surface-container-highest/50 text-[9px] font-medium text-on-surface-variant border border-surface-container-highest/30">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="sm:col-span-4 w-full text-center sm:text-right">
