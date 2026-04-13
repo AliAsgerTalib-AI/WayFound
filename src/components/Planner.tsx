@@ -422,12 +422,25 @@ export const Planner = () => {
       body: JSON.stringify({ prompt, schema }),
     });
     
+    const contentType = response.headers.get("content-type");
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to generate content from server.");
+      let errorMessage = "Failed to generate content from server.";
+      if (contentType && contentType.includes("application/json")) {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } else {
+        const textError = await response.text();
+        console.error("Server returned non-JSON error:", textError);
+        errorMessage = `Server Error (${response.status}): ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
     }
     
-    return await response.json();
+    if (contentType && contentType.includes("application/json")) {
+      return await response.json();
+    } else {
+      throw new Error("Server did not return JSON. Please check if the API route is configured correctly.");
+    }
   };
 
   const generateJourney = async () => {
