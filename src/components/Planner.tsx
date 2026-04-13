@@ -1,12 +1,101 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, Target, Gem, LucideIcon, ShieldCheck } from "lucide-react";
-import { GoogleGenAI, Type } from "@google/genai";
+import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, Target, Gem, LucideIcon, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
+import { Type } from "@google/genai";
 import Markdown from "react-markdown";
+import { z } from "zod";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
 import { MapDisplay } from "./MapDisplay";
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
+
+// --- Zod Schemas for Validation ---
+const BudgetSchema = z.object({
+  totalTripEstimate: z.number(),
+  currency: z.string(),
+  summary: z.string(),
+  categories: z.array(z.object({
+    category: z.string(),
+    dailyEstimate: z.number(),
+    totalEstimate: z.number(),
+    description: z.string(),
+    breakdown: z.array(z.string()),
+    icon: z.enum(["home", "food", "transport", "activities", "other"])
+  }))
+});
+
+const BrainstormSchema = z.object({
+  activities: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    accessibilityLevel: z.string(),
+    physicalExertion: z.string()
+  }))
+});
+
+const EventsSchema = z.object({
+  events: z.array(z.object({
+    name: z.string(),
+    dateRange: z.string(),
+    description: z.string(),
+    significance: z.string(),
+    accessDetails: z.string(),
+    estimatedCost: z.string()
+  }))
+});
+
+const ItinerarySchema = z.object({
+  title: z.string(),
+  story: z.string(),
+  destination: z.string(),
+  startDate: z.string(),
+  timingReason: z.string(),
+  days: z.array(z.object({
+    day: z.number(),
+    date: z.string(),
+    title: z.string(),
+    travelerNotes: z.string().optional(),
+    activities: z.array(z.object({
+      time: z.string(),
+      activity: z.string(),
+      location: z.string(),
+      description: z.string(),
+      why: z.string(),
+      howToGetThere: z.string().optional(),
+      openingHours: z.string().optional(),
+      estimatedCost: z.string().optional(),
+      coordinates: z.object({
+        lat: z.number(),
+        lng: z.number()
+      }),
+      restaurantRecommendation: z.union([
+        z.object({
+          name: z.string(),
+          cuisine: z.string(),
+          suitability: z.string(),
+          note: z.string().optional()
+        }),
+        z.string()
+      ]).optional()
+    }))
+  })),
+  recommendations: z.array(z.string()).optional()
+});
+
+// --- Helper for Retries ---
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries: number = 2,
+  delay: number = 1000
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 0) throw error;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return withRetry(fn, retries - 1, delay * 2);
+  }
+}
 
 // --- Types ---
 
@@ -313,6 +402,7 @@ export const Planner = () => {
   ) || [];
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStep, setGenerationStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingBudget, setIsGeneratingBudget] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
@@ -325,6 +415,21 @@ export const Planner = () => {
     setDetails(prev => ({ ...prev, [key]: value }));
   };
 
+  const callAiApi = async (prompt: string, schema: any) => {
+    const response = await fetch("/api/ai/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, schema }),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Failed to generate content from server.");
+    }
+    
+    return await response.json();
+  };
+
   const generateJourney = async () => {
     if (!details.destination) {
       setError("Please enter a destination first.");
@@ -333,22 +438,9 @@ export const Planner = () => {
     
     setIsGenerating(true);
     setError(null);
+    setGenerationStep("Analyzing destination economics...");
     
     try {
-      // Use VITE_ prefix for reliable client-side access in Vite/Vercel
-      const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
-      const modelName = import.meta.env.VITE_GEMINI_MODEL || "gemini-3-flash-preview";
-
-      if (!apiKey || apiKey === "undefined" || apiKey === "null") {
-        throw new Error("Gemini API Key is missing. Please ensure VITE_GEMINI_API_KEY is set in your Vercel Environment Variables and that you have REDEPLOYED.");
-      }
-
-      if (!apiKey.startsWith("AIza")) {
-        throw new Error(`Invalid API Key format. Gemini keys must start with 'AIza'. Your key starts with: "${apiKey.substring(0, 4)}"`);
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-
       const timingContext = details.startDate 
         ? `starting on ${details.startDate}` 
         : (selectedTiming.length > 0 
@@ -356,181 +448,164 @@ export const Planner = () => {
             : "Optimized by AI based on the other preferences");
 
       // 1. Generate Budget
-      const budgetPrompt = `Generate a highly granular travel budget breakdown for a trip to ${details.destination}.
-      
-      Trip Details:
-      - Duration: ${details.duration} days
-      - Travel Style: ${selectedTravelStyles.join(", ")}
-      - Accommodation Style: ${selectedAccommodationTypes.join(", ")}
-      - Number of Travelers: ${details.numTravelers}
-      - Total Budget Goal: $${details.budgetAmount}
-      
-      CRITICAL BUDGETING FACTORS:
-      1. **Destination Cost of Living:** Adjust all estimates based on the specific economic reality of ${details.destination}. Consider local prices for coffee, street food, mid-range dining, and public transit.
-      2. **Travel Style Alignment:** If the style is "Luxury," prioritize high-end dining and private transit. If "Shoestring," prioritize hostels and free activities.
-      3. **Granularity:** Provide specific examples of what the money buys in each category (e.g., "Average cost of a 3-course dinner for two: $80", "Typical museum entry: $15").
-      
-      Provide realistic estimates for:
-      1. Accommodation (aligned with ${selectedAccommodationTypes.join(", ")})
-      2. Food & Drink (including breakdown of breakfast, lunch, dinner, and snacks)
-      3. Transportation (local transit, taxis, or rentals)
-      4. Activities & Sightseeing (specific to ${selectedInterests.join(", ")})
-      5. Miscellaneous (SIM cards, tips, laundry, etc.)
-      
-      Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
-
-      const budgetSchema = {
-        type: Type.OBJECT,
-        properties: {
-          totalTripEstimate: { type: Type.NUMBER },
-          currency: { type: Type.STRING },
-          summary: { type: Type.STRING },
-          categories: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                category: { type: Type.STRING },
-                dailyEstimate: { type: Type.NUMBER },
-                totalEstimate: { type: Type.NUMBER },
-                description: { type: Type.STRING },
-                breakdown: { 
-                  type: Type.ARRAY, 
-                  items: { type: Type.STRING },
-                  description: "Granular cost examples (e.g., 'Coffee: $4', 'Dinner: $30')"
-                },
-                icon: { 
-                  type: Type.STRING,
-                  enum: ["home", "food", "transport", "activities", "other"]
-                }
-              },
-              required: ["category", "dailyEstimate", "totalEstimate", "description", "icon", "breakdown"]
-            }
-          }
-        },
-        required: ["totalTripEstimate", "currency", "categories", "summary"]
-      };
-
-      const budgetResponse = await ai.models.generateContent({
-        model: modelName,
-        contents: budgetPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: budgetSchema
-        }
-      });
-
-      if (!budgetResponse.text) {
-        const finishReason = (budgetResponse as any).candidates?.[0]?.finishReason;
-        throw new Error(`Budget generation failed. Reason: ${finishReason || "Unknown"}`);
-      }
-      
-      let budgetData;
+      let budgetData: any = null;
       try {
-        budgetData = JSON.parse(budgetResponse.text);
+        const budgetPrompt = `Generate a highly granular travel budget breakdown for a trip to ${details.destination}.
+        
+        Trip Details:
+        - Duration: ${details.duration} days
+        - Travel Style: ${selectedTravelStyles.join(", ")}
+        - Accommodation Style: ${selectedAccommodationTypes.join(", ")}
+        - Number of Travelers: ${details.numTravelers}
+        - Total Budget Goal: $${details.budgetAmount}
+        
+        CRITICAL BUDGETING FACTORS:
+        1. **Destination Cost of Living:** Adjust all estimates based on the specific economic reality of ${details.destination}. Consider local prices for coffee, street food, mid-range dining, and public transit.
+        2. **Travel Style Alignment:** If the style is "Luxury," prioritize high-end dining and private transit. If "Shoestring," prioritize hostels and free activities.
+        3. **Granularity:** Provide specific examples of what the money buys in each category (e.g., "Average cost of a 3-course dinner for two: $80", "Typical museum entry: $15").
+        
+        Provide realistic estimates for:
+        1. Accommodation (aligned with ${selectedAccommodationTypes.join(", ")})
+        2. Food & Drink (including breakdown of breakfast, lunch, dinner, and snacks)
+        3. Transportation (local transit, taxis, or rentals)
+        4. Activities & Sightseeing (specific to ${selectedInterests.join(", ")})
+        5. Miscellaneous (SIM cards, tips, laundry, etc.)
+        
+        Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
+
+        const budgetSchema = {
+          type: Type.OBJECT,
+          properties: {
+            totalTripEstimate: { type: Type.NUMBER },
+            currency: { type: Type.STRING },
+            summary: { type: Type.STRING },
+            categories: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  category: { type: Type.STRING },
+                  dailyEstimate: { type: Type.NUMBER },
+                  totalEstimate: { type: Type.NUMBER },
+                  description: { type: Type.STRING },
+                  breakdown: { 
+                    type: Type.ARRAY, 
+                    items: { type: Type.STRING },
+                    description: "Granular cost examples (e.g., 'Coffee: $4', 'Dinner: $30')"
+                  },
+                  icon: { 
+                    type: Type.STRING,
+                    enum: ["home", "food", "transport", "activities", "other"]
+                  }
+                },
+                required: ["category", "dailyEstimate", "totalEstimate", "description", "icon", "breakdown"]
+              }
+            }
+          },
+          required: ["totalTripEstimate", "currency", "categories", "summary"]
+        };
+
+        const parsedBudget = await withRetry(() => callAiApi(budgetPrompt, budgetSchema));
+        budgetData = BudgetSchema.parse(parsedBudget);
         setBudgetBreakdown(budgetData);
       } catch (e) {
-        throw new Error("Failed to parse budget data.");
+        console.warn("Budget generation failed, continuing with fallback:", e);
       }
 
       // 1.5 Brainstorm Potential Activities (Safety Strategist Persona)
-      const brainstormPrompt = `As the Safety Strategist (Lead Auditor) and Ethnographer, brainstorm a list of 15-20 potential activities and locations in ${details.destination} that align with these interests: ${selectedInterests.join(", ")}.
-      
-      Traveler Profile:
-      - Travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")})
-      - Travel Style: ${selectedTravelStyles.join(", ")}
-      
-      MANDATORY SAFETY & ACCESSIBILITY AUDIT (Safety Strategist):
-      - YOUR PRIMARY MISSION is to ensure the safety and physical comfort of the traveler.
-      - AGGRESSIVELY PRIORITIZE the Health/Accessibility Notes: "${details.healthNotes || "None"}".
-      - If an activity poses ANY risk or physical strain beyond the traveler's noted limits, EXCLUDE IT IMMEDIATELY.
-      - Prioritize activities that are generally accessible and do not require extreme physical exertion.
-      
-      CRITICAL CONSTRAINTS & AGGRESSIVE AVOIDANCES:
-      - EXPLICITLY FILTER OUT and DO NOT RECOMMEND anything that matches these criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
-      - AGGRESSIVELY EXCLUDE activities that are crowded, overly touristy, or generic "must-see" landmarks if they don't align with an "off-the-beaten-path" ethos.
-      - Prioritize hidden gems, local secrets, and quiet, intentional spaces.
-      - Ensure a mix of atmospheric matches (Ethnographer's perspective) and safe, low-impact options.`;
+      setGenerationStep("Scouting hidden gems and local secrets...");
+      let brainstormedActivities: any[] = [];
+      try {
+        const brainstormPrompt = `As the Safety Strategist (Lead Auditor) and Ethnographer, brainstorm a list of 15-20 potential activities and locations in ${details.destination} that align with these interests: ${selectedInterests.join(", ")}.
+        
+        Traveler Profile:
+        - Travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")})
+        - Travel Style: ${selectedTravelStyles.join(", ")}
+        
+        MANDATORY SAFETY & ACCESSIBILITY AUDIT (Safety Strategist):
+        - YOUR PRIMARY MISSION is to ensure the safety and physical comfort of the traveler.
+        - AGGRESSIVELY PRIORITIZE the Health/Accessibility Notes: "${details.healthNotes || "None"}".
+        - If an activity poses ANY risk or physical strain beyond the traveler's noted limits, EXCLUDE IT IMMEDIATELY.
+        - Prioritize activities that are generally accessible and do not require extreme physical exertion.
+        
+        CRITICAL CONSTRAINTS & AGGRESSIVE AVOIDANCES:
+        - EXPLICITLY FILTER OUT and DO NOT RECOMMEND anything that matches these criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
+        - AGGRESSIVELY EXCLUDE activities that are crowded, overly touristy, or generic "must-see" landmarks if they don't align with an "off-the-beaten-path" ethos.
+        - Prioritize hidden gems, local secrets, and quiet, intentional spaces.
+        - Ensure a mix of atmospheric matches (Ethnographer's perspective) and safe, low-impact options.`;
 
-      const brainstormSchema = {
-        type: Type.OBJECT,
-        properties: {
-          activities: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                description: { type: Type.STRING },
-                accessibilityLevel: { type: Type.STRING, description: "e.g., High, Moderate, Low" },
-                physicalExertion: { type: Type.STRING, description: "e.g., Minimal, Moderate, High" }
-              },
-              required: ["name", "description", "accessibilityLevel", "physicalExertion"]
+        const brainstormSchema = {
+          type: Type.OBJECT,
+          properties: {
+            activities: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  accessibilityLevel: { type: Type.STRING, description: "e.g., High, Moderate, Low" },
+                  physicalExertion: { type: Type.STRING, description: "e.g., Minimal, Moderate, High" }
+                },
+                required: ["name", "description", "accessibilityLevel", "physicalExertion"]
+              }
             }
-          }
-        },
-        required: ["activities"]
-      };
+          },
+          required: ["activities"]
+        };
 
-      const brainstormResponse = await ai.models.generateContent({
-        model: modelName,
-        contents: brainstormPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: brainstormSchema
-        }
-      });
-
-      const brainstormedActivities = JSON.parse(brainstormResponse.text || '{"activities":[]}').activities;
+        const parsedBrainstorm = await withRetry(() => callAiApi(brainstormPrompt, brainstormSchema));
+        brainstormedActivities = BrainstormSchema.parse(parsedBrainstorm).activities;
+      } catch (e) {
+        console.warn("Brainstorming failed:", e);
+      }
 
       // 1.6 Brainstorm Local Events & Festivals (The Scout Persona)
-      const eventsPrompt = `As The Scout (Data Harvester) and Safety Strategist (Auditor), identify potential local events, festivals, or seasonal highlights in ${details.destination} for the timing: ${timingContext} (and the following ${details.duration} days).
-      
-      SAFETY STRATEGIST OVERRIDE:
-      - You MUST audit every event for accessibility and crowd density.
-      - If an event is known for overwhelming crowds or lack of accessibility, it MUST be excluded.
-      - Consider Health/Accessibility Notes: "${details.healthNotes || "None"}".
-      
-      Focus on:
-      - Cultural festivals, public holidays, or seasonal natural events (e.g., cherry blossoms, Christmas markets).
-      - Events that align with the interests: ${selectedInterests.join(", ")}.
-      - Accessibility for the travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")}).
-      - Provide specific details on how to access the event and any associated costs.
-      - STRICTLY AVOID and AGGRESSIVELY FILTER OUT anything matching: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
-      - EXCLUDE mass-market tourist traps or overly commercialized events.`;
+      setGenerationStep("Checking local festivals and seasonal events...");
+      let localEvents: any[] = [];
+      try {
+        const eventsPrompt = `As The Scout (Data Harvester) and Safety Strategist (Auditor), identify potential local events, festivals, or seasonal highlights in ${details.destination} for the timing: ${timingContext} (and the following ${details.duration} days).
+        
+        SAFETY STRATEGIST OVERRIDE:
+        - You MUST audit every event for accessibility and crowd density.
+        - If an event is known for overwhelming crowds or lack of accessibility, it MUST be excluded.
+        - Consider Health/Accessibility Notes: "${details.healthNotes || "None"}".
+        
+        Focus on:
+        - Cultural festivals, public holidays, or seasonal natural events (e.g., cherry blossoms, Christmas markets).
+        - Events that align with the interests: ${selectedInterests.join(", ")}.
+        - Accessibility for the travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")}).
+        - Provide specific details on how to access the event and any associated costs.
+        - STRICTLY AVOID and AGGRESSIVELY FILTER OUT anything matching: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
+        - EXCLUDE mass-market tourist traps or overly commercialized events.`;
 
-      const eventsSchema = {
-        type: Type.OBJECT,
-        properties: {
-          events: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                dateRange: { type: Type.STRING },
-                description: { type: Type.STRING },
-                significance: { type: Type.STRING },
-                accessDetails: { type: Type.STRING, description: "How to access the event (transit, tickets, etc.)" },
-                estimatedCost: { type: Type.STRING, description: "Estimated cost or if it's free" }
-              },
-              required: ["name", "dateRange", "description", "significance", "accessDetails", "estimatedCost"]
+        const eventsSchema = {
+          type: Type.OBJECT,
+          properties: {
+            events: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  dateRange: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  significance: { type: Type.STRING },
+                  accessDetails: { type: Type.STRING, description: "How to access the event (transit, tickets, etc.)" },
+                  estimatedCost: { type: Type.STRING, description: "Estimated cost or if it's free" }
+                },
+                required: ["name", "dateRange", "description", "significance", "accessDetails", "estimatedCost"]
+              }
             }
-          }
-        },
-        required: ["events"]
-      };
+          },
+          required: ["events"]
+        };
 
-      const eventsResponse = await ai.models.generateContent({
-        model: modelName,
-        contents: eventsPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: eventsSchema
-        }
-      });
-
-      const localEvents = JSON.parse(eventsResponse.text || '{"events":[]}').events;
+        const parsedEvents = await withRetry(() => callAiApi(eventsPrompt, eventsSchema));
+        localEvents = EventsSchema.parse(parsedEvents).events;
+      } catch (e) {
+        console.warn("Events scouting failed:", e);
+      }
 
       // 2. Generate Itinerary
       const itineraryPrompt = `Generate a bespoke travel itinerary for a ${details.duration}-day trip to ${details.destination} ${timingContext}.
@@ -670,33 +745,20 @@ export const Planner = () => {
         required: ["title", "story", "destination", "startDate", "timingReason", "days"]
       };
 
-      const itineraryResponse = await ai.models.generateContent({
-        model: modelName,
-        contents: itineraryPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: itinerarySchema
-        }
-      });
-
-      if (!itineraryResponse.text) {
-        const finishReason = (itineraryResponse as any).candidates?.[0]?.finishReason;
-        throw new Error(`Itinerary generation failed. Reason: ${finishReason || "Unknown"}`);
-      }
-
-      let itineraryData;
-      try {
-        itineraryData = JSON.parse(itineraryResponse.text);
-        setItinerary(itineraryData);
-      } catch (e) {
-        throw new Error("Failed to parse itinerary data.");
-      }
+      const parsedItinerary = await withRetry(() => callAiApi(itineraryPrompt, itinerarySchema));
+      const validatedItinerary = ItinerarySchema.parse(parsedItinerary);
+      setItinerary(validatedItinerary as any);
 
     } catch (err) {
       console.error("Generation error:", err);
-      setError(err instanceof Error ? err.message : "Something went wrong while weaving your journey. Please try again.");
+      if (err instanceof z.ZodError) {
+        setError("The AI returned data in an unexpected format. Please try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong while weaving your journey. Please try again.");
+      }
     } finally {
       setIsGenerating(false);
+      setGenerationStep(null);
     }
   };
 
