@@ -145,7 +145,7 @@ export const BudgetBreakdown: React.FC<BudgetBreakdownProps> = ({ data, duration
                     {cat.breakdown && cat.breakdown.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {cat.breakdown.map((item, bIdx) => (
-                          <span key={bIdx} className="px-2 py-0.5 rounded-full bg-surface-container-highest/50 text-[9px] font-medium text-on-surface-variant border border-surface-container-highest/30">
+                          <span key={bIdx} className="px-2 py-0.5 rounded-full text-[9px] font-medium text-on-surface-variant border" style={{ backgroundColor: 'rgba(227, 226, 223, 0.5)', borderColor: 'rgba(227, 226, 223, 0.3)' }}>
                             {item}
                           </span>
                         ))}

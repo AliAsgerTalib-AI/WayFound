@@ -22,8 +22,12 @@
   --color-on-secondary-container: #706439;
   
   --color-on-background: #1b1c1a;
+  --color-on-background-rgb: 27, 28, 26;
   --color-on-surface: #1b1c1a;
+  --color-on-surface-rgb: 27, 28, 26;
   --color-on-surface-variant: #46483c;
+  --color-on-surface-variant-rgb: 70, 72, 60;
+  --color-error: #ba1a1a;
   
   --color-surface-container-highest-rgb: 227, 226, 223;
   

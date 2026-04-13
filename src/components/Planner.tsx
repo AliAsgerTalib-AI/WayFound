@@ -774,16 +774,118 @@ export const Planner = () => {
     if (!resultsRef.current) return;
     
     const element = resultsRef.current;
+    
+    // Create a clone to modify for PDF export if needed
+    // or just use the options to ignore certain elements
     const opt = {
-      margin: 10,
+      margin: [10, 10],
       filename: `Wayfound-${details.destination || 'Journey'}.pdf`,
-      image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true, 
+        logging: false,
+        letterRendering: true,
+        allowTaint: true,
+        onclone: (clonedDoc: Document) => {
+          // 1. Sanitize all stylesheets directly via cssRules to catch what innerHTML might miss
+          try {
+            for (let i = 0; i < clonedDoc.styleSheets.length; i++) {
+              const sheet = clonedDoc.styleSheets[i];
+              try {
+                const rules = sheet.cssRules || sheet.rules;
+                if (!rules) continue;
+                for (let j = 0; j < rules.length; j++) {
+                  const rule = rules[j] as CSSStyleRule;
+                  if (rule.style && rule.style.cssText && (rule.style.cssText.includes('oklch') || rule.style.cssText.includes('oklab'))) {
+                    // Replace modern color functions with safe hex fallbacks
+                    const newCss = rule.style.cssText
+                      .replace(/oklch\([^)]+\)/g, '#1b1c1a')
+                      .replace(/oklab\([^)]+\)/g, '#1b1c1a');
+                    rule.style.cssText = newCss;
+                  }
+                }
+              } catch (e) {
+                // Ignore cross-origin stylesheet errors
+              }
+            }
+          } catch (e) {
+            console.error('Error sanitizing stylesheets:', e);
+          }
+
+          // 2. Also sanitize style tags innerHTML as a fallback
+          const styleTags = clonedDoc.getElementsByTagName('style');
+          for (let i = 0; i < styleTags.length; i++) {
+            const style = styleTags[i];
+            if (style.innerHTML.includes('okl')) {
+              style.innerHTML = style.innerHTML
+                .replace(/oklch\([^)]+\)/g, '#1b1c1a')
+                .replace(/oklab\([^)]+\)/g, '#1b1c1a');
+            }
+          }
+
+          // 3. Inject explicit overrides for our theme
+          const overrideStyle = clonedDoc.createElement('style');
+          overrideStyle.innerHTML = `
+            * { 
+              color-scheme: light !important; 
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .text-primary { color: #56642b !important; }
+            .text-on-surface { color: #1b1c1a !important; }
+            .text-on-surface-variant { color: #46483c !important; }
+            .bg-primary { background-color: #56642b !important; }
+            .bg-surface-container-low { background-color: #f4f4f0 !important; }
+            .bg-surface-container-lowest { background-color: #ffffff !important; }
+            .bg-secondary-container { background-color: #f3e2ac !important; }
+            .border-surface-container-highest { border-color: #e3e2df !important; }
+            .editorial-shadow { box-shadow: none !important; border: 1px solid #eee !important; }
+            
+            /* Handle potential Tailwind 4 opacity classes that might still be present */
+            [class*="/"] { background-color: transparent !important; border-color: #eee !important; color: inherit !important; }
+          `;
+          clonedDoc.head.appendChild(overrideStyle);
+
+          // 4. Sanitize inline styles and attributes on all elements
+          const elements = clonedDoc.getElementsByTagName('*');
+          for (let i = 0; i < elements.length; i++) {
+            const el = elements[i] as HTMLElement;
+            
+            // Inline styles
+            if (el.style.cssText && (el.style.cssText.includes('oklch') || el.style.cssText.includes('oklab'))) {
+              el.style.cssText = el.style.cssText
+                .replace(/oklch\([^)]+\)/g, '#1b1c1a')
+                .replace(/oklab\([^)]+\)/g, '#1b1c1a');
+            }
+
+            // Specific problematic properties that might not be in cssText
+            if (el.style.boxShadow && el.style.boxShadow.includes('okl')) {
+              el.style.boxShadow = 'none';
+            }
+
+            // SVG attributes
+            const fill = el.getAttribute('fill');
+            if (fill && (fill.includes('oklch') || fill.includes('oklab'))) {
+              el.setAttribute('fill', '#1b1c1a');
+            }
+            const stroke = el.getAttribute('stroke');
+            if (stroke && (stroke.includes('oklch') || stroke.includes('oklab'))) {
+              el.setAttribute('stroke', '#1b1c1a');
+            }
+          }
+        }
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
 
-    // New way to handle export to ensure it works in iframes
-    html2pdf().set(opt).from(element).save();
+    // Use the promise-based API of html2pdf
+    // @ts-ignore
+    html2pdf().from(element).set(opt).save().catch(err => {
+      console.error('PDF Export Error:', err);
+      setError("Failed to export PDF. Please try again.");
+    });
   };
 
   const toggleItem = useCallback((list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
@@ -1241,7 +1343,8 @@ export const Planner = () => {
                 <button 
                   type="button"
                   onClick={prevStep}
-                  className="flex-1 py-4 rounded-full border border-primary text-primary font-headline font-bold transition-all hover:bg-primary/5 active:scale-[0.98]"
+                  className="flex-1 py-4 rounded-full border border-primary text-primary font-headline font-bold transition-all active:scale-[0.98]"
+                  style={{ backgroundColor: 'rgba(86, 100, 43, 0.05)' }}
                 >
                   Back
                 </button>
@@ -1251,7 +1354,8 @@ export const Planner = () => {
                 <button 
                   type="button"
                   onClick={nextStep}
-                  className="flex-[2] py-4 rounded-full bg-primary text-on-primary font-headline font-bold transition-all hover:bg-primary/90 active:scale-[0.98] editorial-shadow"
+                  className="flex-[2] py-4 rounded-full bg-primary text-on-primary font-headline font-bold transition-all active:scale-[0.98] editorial-shadow"
+                  style={{ backgroundColor: 'rgba(86, 100, 43, 0.9)' }}
                 >
                   Continue
                 </button>
@@ -1294,7 +1398,7 @@ export const Planner = () => {
                       : (selectedTiming.length > 0 ? selectedTiming.join(", ") : "Optimized by AI"))}
                   </div>
                   {itinerary?.timingReason && (
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60 mt-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest mt-2" style={{ color: 'rgba(86, 100, 43, 0.6)' }}>
                       {itinerary.timingReason}
                     </p>
                   )}
@@ -1315,7 +1419,7 @@ export const Planner = () => {
 
                     {/* Map Section */}
                     {mapLocations.length > 0 && (
-                      <div className="space-y-4">
+                      <div className="space-y-4" data-html2canvas-ignore="true">
                         <div className="flex items-center gap-4">
                           <div className="h-px flex-1 bg-surface-container-highest" />
                           <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-on-surface-variant">Journey Map</h3>
@@ -1363,8 +1467,8 @@ export const Planner = () => {
                                     </p>
                                     
                                     {activity.howToGetThere && (
-                                      <div className="mb-4 p-3 rounded bg-surface-container-highest/30 border border-surface-container-highest flex items-start gap-3">
-                                        <div className="mt-1 p-1 rounded-full bg-primary/10">
+                                      <div className="mb-4 p-3 rounded border flex items-start gap-3" style={{ backgroundColor: 'rgba(227, 226, 223, 0.3)', borderColor: '#e3e2df' }}>
+                                        <div className="mt-1 p-1 rounded-full" style={{ backgroundColor: 'rgba(86, 100, 43, 0.1)' }}>
                                           <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                                         </div>
                                         <div>
@@ -1376,7 +1480,7 @@ export const Planner = () => {
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                                       {activity.openingHours && (
-                                        <div className="p-3 rounded bg-surface-container-highest/20 border border-surface-container-highest/50 flex items-start gap-3">
+                                        <div className="p-3 rounded border flex items-start gap-3" style={{ backgroundColor: 'rgba(227, 226, 223, 0.2)', borderColor: 'rgba(227, 226, 223, 0.5)' }}>
                                           <Clock className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                                           <div>
                                             <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-0.5 opacity-60">Opening Hours</p>
@@ -1385,7 +1489,7 @@ export const Planner = () => {
                                         </div>
                                       )}
                                       {activity.estimatedCost && (
-                                        <div className="p-3 rounded bg-surface-container-highest/20 border border-surface-container-highest/50 flex items-start gap-3">
+                                        <div className="p-3 rounded border flex items-start gap-3" style={{ backgroundColor: 'rgba(227, 226, 223, 0.2)', borderColor: 'rgba(227, 226, 223, 0.5)' }}>
                                           <Coins className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                                           <div>
                                             <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-0.5 opacity-60">Est. Cost</p>
@@ -1396,7 +1500,7 @@ export const Planner = () => {
                                     </div>
 
                                     {activity.restaurantRecommendation && (
-                                      <div className="mb-6 p-4 rounded-lg bg-primary/5 border border-primary/10 flex items-start gap-3">
+                                      <div className="mb-6 p-4 rounded-lg border flex items-start gap-3" style={{ backgroundColor: 'rgba(86, 100, 43, 0.05)', borderColor: 'rgba(86, 100, 43, 0.1)' }}>
                                         <Utensils className="w-4 h-4 text-primary shrink-0 mt-1" />
                                         <div>
                                           <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1 opacity-80">Dining Recommendation</p>
@@ -1431,7 +1535,7 @@ export const Planner = () => {
                               </div>
 
                               {day.travelerNotes && (
-                                <div className="mt-6 md:mt-8 p-5 md:p-6 rounded-xl bg-surface-container-highest/20 border border-surface-container-highest/50 relative overflow-hidden">
+                                <div className="mt-6 md:mt-8 p-5 md:p-6 rounded-xl border relative overflow-hidden" style={{ backgroundColor: 'rgba(227, 226, 223, 0.2)', borderColor: 'rgba(227, 226, 223, 0.5)' }}>
                                   <div className="absolute top-0 right-0 p-4 opacity-10">
                                     <BookOpen className="w-10 h-10 md:w-12 md:h-12 text-primary" />
                                   </div>
@@ -1483,24 +1587,10 @@ export const Planner = () => {
                       duration={details.duration} 
                       onUpdate={setBudgetBreakdown}
                     />
-                    
-                    {lastPrompt && (
-                      <div className="mt-12 p-6 rounded-lg bg-surface-container-low border border-surface-container-highest/50 no-print">
-                        <div className="flex items-center gap-2 mb-4">
-                          <Search className="w-4 h-4 text-on-surface-variant opacity-60" />
-                          <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant opacity-60">Generation Prompt</h4>
-                        </div>
-                        <div className="bg-surface-container-lowest p-4 rounded border border-surface-container-highest/30">
-                          <p className="text-[10px] font-mono text-on-surface-variant/70 leading-relaxed whitespace-pre-wrap">
-                            {lastPrompt}
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
-                <div className="flex justify-center pt-8 no-print">
+                <div className="flex justify-center pt-8 no-print" data-html2canvas-ignore="true">
                   <button 
                     onClick={handleExportPDF}
                     className="flex items-center gap-2 px-8 py-3 rounded-full border text-on-surface-variant hover:bg-surface-container-highest transition-colors text-sm font-bold uppercase tracking-widest"
