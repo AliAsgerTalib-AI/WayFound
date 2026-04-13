@@ -4,6 +4,7 @@ import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, U
 import { GoogleGenAI, Type } from "@google/genai";
 import Markdown from "react-markdown";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
+import { MapDisplay } from "./MapDisplay";
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 
@@ -22,6 +23,10 @@ interface ItineraryDay {
     howToGetThere?: string;
     openingHours?: string;
     estimatedCost?: string;
+    coordinates?: {
+      lat: number;
+      lng: number;
+    };
     restaurantRecommendation?: {
       name: string;
       cuisine: string;
@@ -294,6 +299,19 @@ export const Planner = () => {
   
   const [budgetBreakdown, setBudgetBreakdown] = useState<BudgetData | null>(null);
   const [itinerary, setItinerary] = useState<ItineraryData | null>(null);
+  
+  const mapLocations = itinerary?.days.flatMap(day => 
+    day.activities
+      .filter(act => act.coordinates)
+      .map(act => ({
+        lat: act.coordinates!.lat,
+        lng: act.coordinates!.lng,
+        name: act.activity,
+        day: day.day,
+        time: act.time
+      }))
+  ) || [];
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingBudget, setIsGeneratingBudget] = useState(false);
@@ -574,6 +592,7 @@ export const Planner = () => {
       5. Provide a 'restaurantRecommendation' nearby for lunch or dinner if the activity time aligns with a meal. 
          Include the restaurant name, a brief description of the cuisine, and its suitability based on the selected 'Food Preferences': ${selectedFood.join(", ") || "None"}.
          If no specific recommendation is generated, indicate that by setting the name to "No specific recommendation found".
+      6. Provide 'coordinates' with 'lat' and 'lng' (numbers) for the activity's location.
       
       For each day:
       1. Provide 'date' (YYYY-MM-DD).
@@ -616,6 +635,14 @@ export const Planner = () => {
                       howToGetThere: { type: Type.STRING, description: "Detailed description of how to get to this location from the previous one" },
                       openingHours: { type: Type.STRING, description: "Opening hours for the attraction" },
                       estimatedCost: { type: Type.STRING, description: "Estimated cost for the activity" },
+                      coordinates: {
+                        type: Type.OBJECT,
+                        properties: {
+                          lat: { type: Type.NUMBER },
+                          lng: { type: Type.NUMBER }
+                        },
+                        required: ["lat", "lng"]
+                      },
                       restaurantRecommendation: { 
                         type: Type.OBJECT, 
                         description: "A specific restaurant recommendation nearby",
@@ -1285,6 +1312,18 @@ export const Planner = () => {
                         {itinerary.story}
                       </p>
                     </div>
+
+                    {/* Map Section */}
+                    {mapLocations.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-4">
+                          <div className="h-px flex-1 bg-surface-container-highest" />
+                          <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-on-surface-variant">Journey Map</h3>
+                          <div className="h-px flex-1 bg-surface-container-highest" />
+                        </div>
+                        <MapDisplay locations={mapLocations} />
+                      </div>
+                    )}
 
                     <div className="space-y-8">
                       <div className="flex items-center gap-4">
