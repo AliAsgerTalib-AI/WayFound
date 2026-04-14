@@ -416,30 +416,40 @@ export const Planner = () => {
   };
 
   const callAiApi = async (prompt: string, schema: any) => {
-    const response = await fetch("/api/ai/generate", {
+    const response = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, schema }),
     });
     
     const contentType = response.headers.get("content-type");
+    const responseText = await response.text();
+    
     if (!response.ok) {
-      let errorMessage = "Failed to generate content from server.";
+      let errorMessage = `Server Error (${response.status}): ${response.statusText}`;
       if (contentType && contentType.includes("application/json")) {
-        const errorData = await response.json();
-        errorMessage = errorData.error || errorMessage;
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          errorMessage = `Server Error (${response.status}) but failed to parse error JSON: ${responseText.substring(0, 100)}`;
+        }
       } else {
-        const textError = await response.text();
-        console.error("Server returned non-JSON error:", textError);
-        errorMessage = `Server Error (${response.status}): ${response.statusText}`;
+        console.error("Server returned non-JSON error:", responseText);
+        errorMessage = `Server Error (${response.status}): ${responseText.substring(0, 100)}`;
       }
       throw new Error(errorMessage);
     }
     
     if (contentType && contentType.includes("application/json")) {
-      return await response.json();
+      try {
+        return JSON.parse(responseText);
+      } catch (e) {
+        console.error("Failed to parse success JSON:", responseText);
+        throw new Error(`Failed to parse AI response as JSON. Raw response: ${responseText.substring(0, 100)}...`);
+      }
     } else {
-      throw new Error("Server did not return JSON. Please check if the API route is configured correctly.");
+      throw new Error(`Server did not return JSON (Content-Type: ${contentType}). Raw response: ${responseText.substring(0, 100)}...`);
     }
   };
 

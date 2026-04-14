@@ -17,7 +17,7 @@ async function startServer() {
   app.use(express.json());
 
   // AI Generation Endpoint
-  app.post("/api/ai/generate", async (req, res) => {
+  app.post("/api/generate", async (req, res) => {
     try {
       const { prompt, schema, model } = req.body;
       const rawKey = process.env.GEMINI_API_KEY || "";

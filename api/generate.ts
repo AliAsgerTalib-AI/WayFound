@@ -7,7 +7,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { prompt, schema, model } = req.body;
+    let body = req.body;
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch (e) {
+        return res.status(400).json({ error: "Invalid JSON body" });
+      }
+    }
+    
+    const { prompt, schema, model } = body || {};
+    if (!prompt) {
+      return res.status(400).json({ error: "Missing prompt in request body" });
+    }
     const rawKey = process.env.GEMINI_API_KEY || "";
     const viteKey = process.env.VITE_GEMINI_API_KEY || "";
     const appKey = process.env.APP_GEMINI_KEY || "";
