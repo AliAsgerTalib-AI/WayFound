@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, Target, Gem, LucideIcon, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
-import { Type } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import Markdown from "react-markdown";
 import { z } from "zod";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
@@ -411,45 +411,35 @@ export const Planner = () => {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+
   const updateDetail = (key: keyof TripDetails, value: string | number) => {
     setDetails(prev => ({ ...prev, [key]: value }));
   };
 
   const callAiApi = async (prompt: string, schema: any) => {
-    const response = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, schema }),
-    });
-    
-    const contentType = response.headers.get("content-type");
-    const responseText = await response.text();
-    
-    if (!response.ok) {
-      let errorMessage = `Server Error (${response.status}): ${response.statusText}`;
-      if (contentType && contentType.includes("application/json")) {
-        try {
-          const errorData = JSON.parse(responseText);
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          errorMessage = `Server Error (${response.status}) but failed to parse error JSON: ${responseText.substring(0, 100)}`;
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: schema
         }
-      } else {
-        console.error("Server returned non-JSON error:", responseText);
-        errorMessage = `Server Error (${response.status}): ${responseText.substring(0, 100)}`;
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("AI returned an empty response.");
       }
-      throw new Error(errorMessage);
-    }
-    
-    if (contentType && contentType.includes("application/json")) {
-      try {
-        return JSON.parse(responseText);
-      } catch (e) {
-        console.error("Failed to parse success JSON:", responseText);
-        throw new Error(`Failed to parse AI response as JSON. Raw response: ${responseText.substring(0, 100)}...`);
+      
+      return JSON.parse(text);
+    } catch (err) {
+      console.error("AI API Error:", err);
+      if (err instanceof Error && err.message.includes("API key not valid")) {
+        throw new Error("Gemini API key is invalid or not configured. Please check your settings.");
       }
-    } else {
-      throw new Error(`Server did not return JSON (Content-Type: ${contentType}). Raw response: ${responseText.substring(0, 100)}...`);
+      throw err;
     }
   };
 
