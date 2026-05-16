@@ -1,11 +1,13 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, Target, Gem, LucideIcon, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
+import { MapPin, Compass, Calendar, Wallet, Wind, Sun, Leaf, Snowflake, Globe, Utensils, Accessibility, Lock, FileText, BookOpen, Headphones, Search, Users, Calculator, Loader2, Clock, Activity, Zap, Backpack, Coins, Crown, Landmark, Eye, Mountain, Heart, Target, Gem, LucideIcon, ShieldCheck, AlertCircle, RefreshCw, Share2, UserPlus, Smartphone, X } from "lucide-react";
 import { GoogleGenAI, Type } from "@google/genai";
 import Markdown from "react-markdown";
 import { z } from "zod";
 import { BudgetBreakdown, BudgetData } from "./BudgetBreakdown";
 import { MapDisplay } from "./MapDisplay";
+import { LiveTripMode } from "./LiveTripMode";
+import { StoryCard } from "./StoryCard";
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 
@@ -67,7 +69,7 @@ const ItinerarySchema = z.object({
       coordinates: z.object({
         lat: z.number(),
         lng: z.number()
-      }),
+      }).optional(),
       restaurantRecommendation: z.union([
         z.object({
           name: z.string(),
@@ -99,42 +101,7 @@ async function withRetry<T>(
 
 // --- Types ---
 
-interface ItineraryDay {
-  day: number;
-  date: string;
-  title: string;
-  activities: {
-    time: string;
-    activity: string;
-    location: string;
-    description: string;
-    why: string;
-    howToGetThere?: string;
-    openingHours?: string;
-    estimatedCost?: string;
-    coordinates?: {
-      lat: number;
-      lng: number;
-    };
-    restaurantRecommendation?: {
-      name: string;
-      cuisine: string;
-      suitability: string;
-      note?: string;
-    } | string;
-  }[];
-  travelerNotes?: string;
-}
-
-interface ItineraryData {
-  title: string;
-  story: string;
-  destination: string;
-  startDate: string;
-  timingReason: string;
-  days: ItineraryDay[];
-  recommendations: string[];
-}
+type ItineraryData = z.infer<typeof ItinerarySchema>;
 
 interface TripDetails {
   origin: string;
@@ -144,7 +111,6 @@ interface TripDetails {
   budgetAmount: number;
   numTravelers: number;
   healthNotes: string;
-  avoidText: string;
 }
 
 // --- Constants ---
@@ -313,6 +279,25 @@ const AVOID_SUGGESTIONS = [
    "Mass-Market Group Tours",
 ];
 
+const MOBILITY_OPTIONS = [
+  "Wheelchair user",
+  "Walking aid (cane / walker)",
+  "Limited walking distance",
+  "No stairs or steep inclines",
+  "Requires lifts / ramps",
+  "Slow pace required",
+  "Seated rest breaks needed",
+  "Ground-floor accommodation only",
+];
+
+const SENSORY_OPTIONS = [
+  "Low vision / visually impaired",
+  "Deaf / hard of hearing",
+  "Sensory sensitivities (crowds / noise)",
+  "Cognitive accessibility needs",
+  "Service animal accompanying",
+];
+
 // --- Sub-components ---
 
 interface SelectionChipProps {
@@ -361,6 +346,38 @@ const FormSection: React.FC<FormSectionProps> = ({ title, children, description,
   </div>
 );
 
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+
+// --- URL / localStorage utilities ---
+
+function encodeState(obj: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+  return btoa(binStr);
+}
+
+function decodeState<T>(str: string): T {
+  const binStr = atob(str);
+  const bytes = Uint8Array.from(binStr, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+}
+
+const STORAGE_KEY = "wayfound_saved_trip";
+
+interface CollabState {
+  details: { destination: string; duration: number; budgetAmount: number; startDate: string };
+  interests: string[];
+  travelTypes: string[];
+  travelStyles: string[];
+  accommodationTypes: string[];
+  timing: string[];
+  languages: string[];
+  food: string[];
+  avoid: string[];
+  mobilityNeeds: string[];
+  sensoryNeeds: string[];
+}
+
 export const Planner = () => {
   const [details, setDetails] = useState<TripDetails>({
     origin: "",
@@ -369,8 +386,7 @@ export const Planner = () => {
     duration: 7,
     budgetAmount: 1000,
     numTravelers: 1,
-    healthNotes: "",
-    avoidText: ""
+    healthNotes: ""
   });
   
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -389,29 +405,70 @@ export const Planner = () => {
   const [budgetBreakdown, setBudgetBreakdown] = useState<BudgetData | null>(null);
   const [itinerary, setItinerary] = useState<ItineraryData | null>(null);
   
-  const mapLocations = itinerary?.days.flatMap(day => 
-    day.activities
-      .filter(act => act.coordinates)
-      .map(act => ({
-        lat: act.coordinates!.lat,
-        lng: act.coordinates!.lng,
-        name: act.activity,
-        day: day.day,
-        time: act.time
-      }))
-  ) || [];
+  const mapLocations = useMemo(() =>
+    itinerary?.days.flatMap(day =>
+      day.activities
+        .filter(act => act.coordinates)
+        .map(act => ({
+          lat: act.coordinates!.lat,
+          lng: act.coordinates!.lng,
+          name: act.activity,
+          day: day.day,
+          time: act.time
+        }))
+    ) ?? [],
+    [itinerary]
+  );
+
+  const [selectedMobilityNeeds, setSelectedMobilityNeeds] = useState<string[]>([]);
+  const [selectedSensoryNeeds, setSelectedSensoryNeeds] = useState<string[]>([]);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isGeneratingBudget, setIsGeneratingBudget] = useState(false);
-  const [budgetError, setBudgetError] = useState<string | null>(null);
-  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
+
+  // Feature: Story Card
+  const [storyCard, setStoryCard] = useState<{ tagline: string; narrative: string } | null>(null);
+
+  // Feature: Live Trip Mode
+  const [isLiveMode, setIsLiveMode] = useState(false);
+
+  // Feature: Collaborative Planning
+  const [isCollaborating, setIsCollaborating] = useState(false);
+  const [partnerPrefs, setPartnerPrefs] = useState<CollabState | null>(null);
+  const [collabCopied, setCollabCopied] = useState(false);
+
+  // Feature: Share Journey
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  // Restore saved trip from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const { itinerary: savedItinerary, budget: savedBudget } = JSON.parse(saved);
+        if (savedItinerary) setItinerary(savedItinerary);
+        if (savedBudget) setBudgetBreakdown(savedBudget);
+      }
+    } catch { /* ignore corrupt data */ }
+
+    // Detect collab query param
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const collabParam = params.get("collab");
+      if (collabParam) {
+        const state = decodeState<CollabState>(collabParam);
+        setPartnerPrefs(state);
+        setIsCollaborating(true);
+        if (state.details?.destination) {
+          setDetails(prev => ({ ...prev, destination: state.details.destination }));
+        }
+      }
+    } catch { /* ignore invalid param */ }
+  }, []);
 
   const updateDetail = (key: keyof TripDetails, value: string | number) => {
     setDetails(prev => ({ ...prev, [key]: value }));
@@ -451,7 +508,7 @@ export const Planner = () => {
     
     setIsGenerating(true);
     setError(null);
-    setGenerationStep("Analyzing destination economics...");
+    setGenerationStep("Researching your destination...");
     
     try {
       const timingContext = details.startDate 
@@ -460,165 +517,178 @@ export const Planner = () => {
             ? `during ${selectedTiming.join(", ")}` 
             : "Optimized by AI based on the other preferences");
 
-      // 1. Generate Budget
-      let budgetData: any = null;
-      try {
-        const budgetPrompt = `Generate a highly granular travel budget breakdown for a trip to ${details.destination}.
-        
+      const budgetPrompt = `Generate a highly granular travel budget breakdown for a trip to ${details.destination}.
+
         Trip Details:
         - Duration: ${details.duration} days
         - Travel Style: ${selectedTravelStyles.join(", ")}
         - Accommodation Style: ${selectedAccommodationTypes.join(", ")}
         - Number of Travelers: ${details.numTravelers}
         - Total Budget Goal: $${details.budgetAmount}
-        
+
         CRITICAL BUDGETING FACTORS:
         1. **Destination Cost of Living:** Adjust all estimates based on the specific economic reality of ${details.destination}. Consider local prices for coffee, street food, mid-range dining, and public transit.
         2. **Travel Style Alignment:** If the style is "Luxury," prioritize high-end dining and private transit. If "Shoestring," prioritize hostels and free activities.
         3. **Granularity:** Provide specific examples of what the money buys in each category (e.g., "Average cost of a 3-course dinner for two: $80", "Typical museum entry: $15").
-        
+
         Provide realistic estimates for:
         1. Accommodation (aligned with ${selectedAccommodationTypes.join(", ")})
         2. Food & Drink (including breakdown of breakfast, lunch, dinner, and snacks)
         3. Transportation (local transit, taxis, or rentals)
         4. Activities & Sightseeing (specific to ${selectedInterests.join(", ")})
         5. Miscellaneous (SIM cards, tips, laundry, etc.)
-        
+
         Ensure the total matches or is slightly under the goal if possible, but prioritize realism for the destination.`;
 
-        const budgetSchema = {
-          type: Type.OBJECT,
-          properties: {
-            totalTripEstimate: { type: Type.NUMBER },
-            currency: { type: Type.STRING },
-            summary: { type: Type.STRING },
-            categories: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  category: { type: Type.STRING },
-                  dailyEstimate: { type: Type.NUMBER },
-                  totalEstimate: { type: Type.NUMBER },
-                  description: { type: Type.STRING },
-                  breakdown: { 
-                    type: Type.ARRAY, 
-                    items: { type: Type.STRING },
-                    description: "Granular cost examples (e.g., 'Coffee: $4', 'Dinner: $30')"
-                  },
-                  icon: { 
-                    type: Type.STRING,
-                    enum: ["home", "food", "transport", "activities", "other"]
-                  }
+      const budgetSchema = {
+        type: Type.OBJECT,
+        properties: {
+          totalTripEstimate: { type: Type.NUMBER },
+          currency: { type: Type.STRING },
+          summary: { type: Type.STRING },
+          categories: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                category: { type: Type.STRING },
+                dailyEstimate: { type: Type.NUMBER },
+                totalEstimate: { type: Type.NUMBER },
+                description: { type: Type.STRING },
+                breakdown: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Granular cost examples (e.g., 'Coffee: $4', 'Dinner: $30')"
                 },
-                required: ["category", "dailyEstimate", "totalEstimate", "description", "icon", "breakdown"]
-              }
+                icon: {
+                  type: Type.STRING,
+                  enum: ["home", "food", "transport", "activities", "other"]
+                }
+              },
+              required: ["category", "dailyEstimate", "totalEstimate", "description", "icon", "breakdown"]
             }
-          },
-          required: ["totalTripEstimate", "currency", "categories", "summary"]
-        };
+          }
+        },
+        required: ["totalTripEstimate", "currency", "categories", "summary"]
+      };
 
-        const parsedBudget = await withRetry(() => callAiApi(budgetPrompt, budgetSchema));
-        budgetData = BudgetSchema.parse(parsedBudget);
-        setBudgetBreakdown(budgetData);
-      } catch (e) {
-        console.warn("Budget generation failed, continuing with fallback:", e);
-      }
+      const brainstormPrompt = `As the Safety Strategist (Lead Auditor) and Ethnographer, brainstorm a list of 15-20 potential activities and locations in ${details.destination} that align with these interests: ${selectedInterests.join(", ")}.
 
-      // 1.5 Brainstorm Potential Activities (Safety Strategist Persona)
-      setGenerationStep("Scouting hidden gems and local secrets...");
-      let brainstormedActivities: any[] = [];
-      try {
-        const brainstormPrompt = `As the Safety Strategist (Lead Auditor) and Ethnographer, brainstorm a list of 15-20 potential activities and locations in ${details.destination} that align with these interests: ${selectedInterests.join(", ")}.
-        
         Traveler Profile:
         - Travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")})
         - Travel Style: ${selectedTravelStyles.join(", ")}
-        
+
         MANDATORY SAFETY & ACCESSIBILITY AUDIT (Safety Strategist):
         - YOUR PRIMARY MISSION is to ensure the safety and physical comfort of the traveler.
-        - AGGRESSIVELY PRIORITIZE the Health/Accessibility Notes: "${details.healthNotes || "None"}".
-        - If an activity poses ANY risk or physical strain beyond the traveler's noted limits, EXCLUDE IT IMMEDIATELY.
-        - Prioritize activities that are generally accessible and do not require extreme physical exertion.
-        
+        - STRUCTURED ACCESSIBILITY REQUIREMENTS — treat as HARD CONSTRAINTS, not suggestions:
+          * Mobility needs: ${selectedMobilityNeeds.length > 0 ? selectedMobilityNeeds.join(", ") : "None specified"}
+          * Sensory / cognitive needs: ${selectedSensoryNeeds.length > 0 ? selectedSensoryNeeds.join(", ") : "None specified"}
+          * Additional health notes: ${details.healthNotes || "None"}
+        ${selectedMobilityNeeds.some(n => n.toLowerCase().includes("wheelchair") || n.toLowerCase().includes("walking aid")) ? "- CRITICAL: EVERY suggested location MUST be wheelchair/mobility-aid accessible. Exclude cobblestones, stairs, and rough terrain without exception." : ""}
+        ${selectedSensoryNeeds.some(n => n.toLowerCase().includes("sensory")) ? "- CRITICAL: Exclude all high-density crowds, loud music venues, and chaotic market environments." : ""}
+        - If an activity poses ANY risk beyond the traveler's stated limits, EXCLUDE IT IMMEDIATELY.
+
         CRITICAL CONSTRAINTS & AGGRESSIVE AVOIDANCES:
-        - EXPLICITLY FILTER OUT and DO NOT RECOMMEND anything that matches these criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
+        - EXPLICITLY FILTER OUT and DO NOT RECOMMEND anything that matches these criteria: ${selectedAvoid.join(", ")}.
         - AGGRESSIVELY EXCLUDE activities that are crowded, overly touristy, or generic "must-see" landmarks if they don't align with an "off-the-beaten-path" ethos.
         - Prioritize hidden gems, local secrets, and quiet, intentional spaces.
         - Ensure a mix of atmospheric matches (Ethnographer's perspective) and safe, low-impact options.`;
 
-        const brainstormSchema = {
-          type: Type.OBJECT,
-          properties: {
-            activities: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  accessibilityLevel: { type: Type.STRING, description: "e.g., High, Moderate, Low" },
-                  physicalExertion: { type: Type.STRING, description: "e.g., Minimal, Moderate, High" }
-                },
-                required: ["name", "description", "accessibilityLevel", "physicalExertion"]
-              }
+      const brainstormSchema = {
+        type: Type.OBJECT,
+        properties: {
+          activities: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                description: { type: Type.STRING },
+                accessibilityLevel: { type: Type.STRING, description: "e.g., High, Moderate, Low" },
+                physicalExertion: { type: Type.STRING, description: "e.g., Minimal, Moderate, High" }
+              },
+              required: ["name", "description", "accessibilityLevel", "physicalExertion"]
             }
-          },
-          required: ["activities"]
-        };
+          }
+        },
+        required: ["activities"]
+      };
 
-        const parsedBrainstorm = await withRetry(() => callAiApi(brainstormPrompt, brainstormSchema));
-        brainstormedActivities = BrainstormSchema.parse(parsedBrainstorm).activities;
-      } catch (e) {
-        console.warn("Brainstorming failed:", e);
-      }
+      const eventsPrompt = `As The Scout (Data Harvester) and Safety Strategist (Auditor), identify potential local events, festivals, or seasonal highlights in ${details.destination} for the timing: ${timingContext} (and the following ${details.duration} days).
 
-      // 1.6 Brainstorm Local Events & Festivals (The Scout Persona)
-      setGenerationStep("Checking local festivals and seasonal events...");
-      let localEvents: any[] = [];
-      try {
-        const eventsPrompt = `As The Scout (Data Harvester) and Safety Strategist (Auditor), identify potential local events, festivals, or seasonal highlights in ${details.destination} for the timing: ${timingContext} (and the following ${details.duration} days).
-        
         SAFETY STRATEGIST OVERRIDE:
         - You MUST audit every event for accessibility and crowd density.
         - If an event is known for overwhelming crowds or lack of accessibility, it MUST be excluded.
-        - Consider Health/Accessibility Notes: "${details.healthNotes || "None"}".
-        
+        - STRUCTURED ACCESSIBILITY REQUIREMENTS (HARD CONSTRAINTS):
+          * Mobility needs: ${selectedMobilityNeeds.length > 0 ? selectedMobilityNeeds.join(", ") : "None"}
+          * Sensory / cognitive needs: ${selectedSensoryNeeds.length > 0 ? selectedSensoryNeeds.join(", ") : "None"}
+          * Additional health notes: ${details.healthNotes || "None"}
+
         Focus on:
         - Cultural festivals, public holidays, or seasonal natural events (e.g., cherry blossoms, Christmas markets).
         - Events that align with the interests: ${selectedInterests.join(", ")}.
         - Accessibility for the travelers: ${details.numTravelers} (${selectedTravelTypes.join(", ")}).
         - Provide specific details on how to access the event and any associated costs.
-        - STRICTLY AVOID and AGGRESSIVELY FILTER OUT anything matching: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}.
+        - STRICTLY AVOID and AGGRESSIVELY FILTER OUT anything matching: ${selectedAvoid.join(", ")}.
         - EXCLUDE mass-market tourist traps or overly commercialized events.`;
 
-        const eventsSchema = {
-          type: Type.OBJECT,
-          properties: {
-            events: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  dateRange: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  significance: { type: Type.STRING },
-                  accessDetails: { type: Type.STRING, description: "How to access the event (transit, tickets, etc.)" },
-                  estimatedCost: { type: Type.STRING, description: "Estimated cost or if it's free" }
-                },
-                required: ["name", "dateRange", "description", "significance", "accessDetails", "estimatedCost"]
-              }
+      const eventsSchema = {
+        type: Type.OBJECT,
+        properties: {
+          events: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                dateRange: { type: Type.STRING },
+                description: { type: Type.STRING },
+                significance: { type: Type.STRING },
+                accessDetails: { type: Type.STRING, description: "How to access the event (transit, tickets, etc.)" },
+                estimatedCost: { type: Type.STRING, description: "Estimated cost or if it's free" }
+              },
+              required: ["name", "dateRange", "description", "significance", "accessDetails", "estimatedCost"]
             }
-          },
-          required: ["events"]
-        };
+          }
+        },
+        required: ["events"]
+      };
 
-        const parsedEvents = await withRetry(() => callAiApi(eventsPrompt, eventsSchema));
-        localEvents = EventsSchema.parse(parsedEvents).events;
-      } catch (e) {
-        console.warn("Events scouting failed:", e);
+      const [budgetResult, brainstormResult, eventsResult] = await Promise.allSettled([
+        withRetry(() => callAiApi(budgetPrompt, budgetSchema)),
+        withRetry(() => callAiApi(brainstormPrompt, brainstormSchema)),
+        withRetry(() => callAiApi(eventsPrompt, eventsSchema)),
+      ]);
+
+      let budgetData: any = null;
+      if (budgetResult.status === 'fulfilled') {
+        try {
+          budgetData = BudgetSchema.parse(budgetResult.value);
+          setBudgetBreakdown(budgetData);
+        } catch (e) {
+          console.warn("Budget validation failed:", e);
+        }
+      } else {
+        console.warn("Budget generation failed:", budgetResult.reason);
       }
+
+      let brainstormedActivities: any[] = [];
+      if (brainstormResult.status === 'fulfilled') {
+        try { brainstormedActivities = BrainstormSchema.parse(brainstormResult.value).activities; }
+        catch (e) { console.warn("Brainstorm validation failed:", e); }
+      } else {
+        console.warn("Brainstorming failed:", brainstormResult.reason);
+      }
+
+      let localEvents: any[] = [];
+      if (eventsResult.status === 'fulfilled') {
+        try { localEvents = EventsSchema.parse(eventsResult.value).events; }
+        catch (e) { console.warn("Events validation failed:", e); }
+      } else {
+        console.warn("Events scouting failed:", eventsResult.reason);
+      }
+
+      setGenerationStep("Crafting your bespoke itinerary...");
 
       // 2. Generate Itinerary
       const itineraryPrompt = `Generate a bespoke travel itinerary for a ${details.duration}-day trip to ${details.destination} ${timingContext}.
@@ -641,8 +711,21 @@ export const Planner = () => {
       - Timing/Season: ${timingContext}
       - Languages: ${selectedLanguages.join(", ")}
       - Food Preferences: ${selectedFood.join(", ") || "No specific preferences"}
-      - Health/Accessibility Notes: ${details.healthNotes || "None"}
-      - Avoid: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}
+      - Mobility Needs: ${selectedMobilityNeeds.length > 0 ? selectedMobilityNeeds.join(", ") : "None"}
+      - Sensory / Cognitive Needs: ${selectedSensoryNeeds.length > 0 ? selectedSensoryNeeds.join(", ") : "None"}
+      - Additional Health Notes: ${details.healthNotes || "None"}
+      - Avoid: ${selectedAvoid.join(", ")}
+      ${isCollaborating && partnerPrefs ? `
+      CO-TRAVELER PREFERENCES (reconcile equally with the primary traveler above):
+      - Co-traveler Interests: ${partnerPrefs.interests.join(", ")}
+      - Co-traveler Travel Types: ${partnerPrefs.travelTypes.join(", ")}
+      - Co-traveler Travel Styles: ${partnerPrefs.travelStyles.join(", ")}
+      - Co-traveler Accommodation: ${partnerPrefs.accommodationTypes.join(", ")}
+      - Co-traveler Food Preferences: ${partnerPrefs.food.join(", ") || "None"}
+      - Co-traveler Things to Avoid: ${partnerPrefs.avoid.join(", ") || "None"}
+      - Co-traveler Mobility Needs: ${partnerPrefs.mobilityNeeds.join(", ") || "None"}
+      CRITICAL: Build a BALANCED itinerary satisfying BOTH travelers. In each day's travelerNotes, explicitly note how that day serves both travel styles.
+      ` : ""}
       
       PRE-SELECTED POTENTIAL ACTIVITIES (Prioritize these):
       ${brainstormedActivities.map((a: any) => `- ${a.name}: ${a.description} (Accessibility: ${a.accessibilityLevel}, Exertion: ${a.physicalExertion})`).join('\n')}
@@ -662,8 +745,8 @@ export const Planner = () => {
          - For **Accessible Travel (Specific Needs)** and **Mobility Accessible**, ensure 100% step-free or assisted access.
          - For **Senior Citizens**, prioritize low-exertion activities and proximity to facilities.
          - For **Family with kids** and **Family with Infants/Toddlers**, prioritize safety, child-friendly amenities, and engaging but safe environments.
-         - AGGRESSIVELY PRIORITIZE the Health/Accessibility Notes: "${details.healthNotes || "None"}".
-         - AGGRESSIVELY FILTER OUT and DO NOT RECOMMEND any activities, locations, or transit methods that match the avoidance criteria: ${[...selectedAvoid, details.avoidText].filter(Boolean).join(", ")}. 
+         - AGGRESSIVELY PRIORITIZE the structured accessibility requirements: Mobility: ${selectedMobilityNeeds.join(", ") || "None"}. Sensory: ${selectedSensoryNeeds.join(", ") || "None"}. Additional notes: ${details.healthNotes || "None"}.
+         - AGGRESSIVELY FILTER OUT and DO NOT RECOMMEND any activities, locations, or transit methods that match the avoidance criteria: ${selectedAvoid.join(", ")}.
          - Explicitly reject crowded, overly touristy, or generic "tourist trap" locations. Prioritize an "off-the-beaten-path" ethos. 
       3. **The Scout (Data Harvester):** Generalize location matches based on the destination's typical seasonality and weather patterns. 
          - For **Business Travelers**, prioritize efficiency, proximity to transit hubs, and time-saving routes.
@@ -689,9 +772,6 @@ export const Planner = () => {
       Finally, provide a 'timingReason' explaining why this specific travel period/start date was chosen or is optimal for this destination and these preferences.
       
       Double check for accuracy. Do not fabricate locations. Prioritize health and handicap issues in every decision.`;
-
-     
-      setLastPrompt(itineraryPrompt);
 
       const itinerarySchema = {
         type: Type.OBJECT,
@@ -760,7 +840,13 @@ export const Planner = () => {
 
       const parsedItinerary = await withRetry(() => callAiApi(itineraryPrompt, itinerarySchema));
       const validatedItinerary = ItinerarySchema.parse(parsedItinerary);
-      setItinerary(validatedItinerary as any);
+      setItinerary(validatedItinerary);
+
+      // Persist trip + trigger story card
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ itinerary: validatedItinerary, budget: budgetData }));
+      } catch { /* storage full or unavailable */ }
+      generateStoryCard(validatedItinerary.story, validatedItinerary.destination);
 
     } catch (err) {
       console.error("Generation error:", err);
@@ -775,9 +861,68 @@ export const Planner = () => {
     }
   };
 
+  const generateStoryCard = async (itineraryStory: string, destination: string) => {
+    try {
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          tagline: { type: Type.STRING, description: "6–8 word evocative travel headline, like a magazine cover" },
+          narrative: { type: Type.STRING, description: "2–3 sentences: a poetic, first-person travel narrative" },
+        },
+        required: ["tagline", "narrative"],
+      };
+      const result = await callAiApi(
+        `Based on this travel story about ${destination}: "${itineraryStory.slice(0, 300)}..." — write a magazine-style travel card. Keep the tagline to 6–8 words (evocative, not generic). The narrative should be 2–3 sentences, poetic, written in second-person ("You will...").`,
+        schema
+      );
+      setStoryCard(result);
+    } catch { /* non-critical, fail silently */ }
+  };
+
+  const handleInviteCollaborator = () => {
+    const state: CollabState = {
+      details: {
+        destination: details.destination,
+        duration: details.duration,
+        budgetAmount: details.budgetAmount,
+        startDate: details.startDate,
+      },
+      interests: selectedInterests,
+      travelTypes: selectedTravelTypes,
+      travelStyles: selectedTravelStyles,
+      accommodationTypes: selectedAccommodationTypes,
+      timing: selectedTiming,
+      languages: selectedLanguages,
+      food: selectedFood,
+      avoid: selectedAvoid,
+      mobilityNeeds: selectedMobilityNeeds,
+      sensoryNeeds: selectedSensoryNeeds,
+    };
+    const encoded = encodeState(state);
+    const url = `${window.location.origin}${window.location.pathname}?collab=${encoded}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCollabCopied(true);
+      setTimeout(() => setCollabCopied(false), 2500);
+    });
+  };
+
+  const handleClearTrip = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem("wayfound_live_completed");
+    setItinerary(null);
+    setBudgetBreakdown(null);
+    setStoryCard(null);
+    setIsLiveMode(false);
+  };
+
   useEffect(() => {
     if (details.numTravelers === 1) {
-      setSelectedTravelTypes(["Solo"]);
+      setSelectedTravelTypes(prev => {
+        const soloFriendly = new Set(["Solo Traveler", "Solo Female Traveler", "Business Traveler", "Digital Nomad", "Backpacker", "Adventure Seeker"]);
+        const next = prev.filter(t => soloFriendly.has(t) || t.includes("Pet-Friendly") || t.includes("Accessible"));
+        const result = next.length > 0 ? next : ["Solo Traveler"];
+        return result.length === prev.length && result.every((v, i) => v === prev[i]) ? prev : result;
+      });
     }
   }, [details.numTravelers]);
 
@@ -849,9 +994,6 @@ export const Planner = () => {
     if (!resultsRef.current) return;
     
     const element = resultsRef.current;
-    
-    // Create a clone to modify for PDF export if needed
-    // or just use the options to ignore certain elements
     const opt = {
       margin: [10, 10],
       filename: `Wayfound-${details.destination || 'Journey'}.pdf`,
@@ -863,7 +1005,6 @@ export const Planner = () => {
         letterRendering: true,
         allowTaint: true,
         onclone: (clonedDoc: Document) => {
-          // 1. Sanitize all stylesheets directly via cssRules to catch what innerHTML might miss
           try {
             for (let i = 0; i < clonedDoc.styleSheets.length; i++) {
               const sheet = clonedDoc.styleSheets[i];
@@ -873,7 +1014,6 @@ export const Planner = () => {
                 for (let j = 0; j < rules.length; j++) {
                   const rule = rules[j] as CSSStyleRule;
                   if (rule.style && rule.style.cssText && (rule.style.cssText.includes('oklch') || rule.style.cssText.includes('oklab'))) {
-                    // Replace modern color functions with safe hex fallbacks
                     const newCss = rule.style.cssText
                       .replace(/oklch\([^)]+\)/g, '#1b1c1a')
                       .replace(/oklab\([^)]+\)/g, '#1b1c1a');
@@ -888,7 +1028,6 @@ export const Planner = () => {
             console.error('Error sanitizing stylesheets:', e);
           }
 
-          // 2. Also sanitize style tags innerHTML as a fallback
           const styleTags = clonedDoc.getElementsByTagName('style');
           for (let i = 0; i < styleTags.length; i++) {
             const style = styleTags[i];
@@ -899,7 +1038,6 @@ export const Planner = () => {
             }
           }
 
-          // 3. Inject explicit overrides for our theme
           const overrideStyle = clonedDoc.createElement('style');
           overrideStyle.innerHTML = `
             * { 
@@ -922,24 +1060,20 @@ export const Planner = () => {
           `;
           clonedDoc.head.appendChild(overrideStyle);
 
-          // 4. Sanitize inline styles and attributes on all elements
           const elements = clonedDoc.getElementsByTagName('*');
           for (let i = 0; i < elements.length; i++) {
             const el = elements[i] as HTMLElement;
             
-            // Inline styles
             if (el.style.cssText && (el.style.cssText.includes('oklch') || el.style.cssText.includes('oklab'))) {
               el.style.cssText = el.style.cssText
                 .replace(/oklch\([^)]+\)/g, '#1b1c1a')
                 .replace(/oklab\([^)]+\)/g, '#1b1c1a');
             }
 
-            // Specific problematic properties that might not be in cssText
             if (el.style.boxShadow && el.style.boxShadow.includes('okl')) {
               el.style.boxShadow = 'none';
             }
 
-            // SVG attributes
             const fill = el.getAttribute('fill');
             if (fill && (fill.includes('oklch') || fill.includes('oklab'))) {
               el.setAttribute('fill', '#1b1c1a');
@@ -955,7 +1089,6 @@ export const Planner = () => {
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
 
-    // Use the promise-based API of html2pdf
     // @ts-ignore
     html2pdf().from(element).set(opt).save().catch(err => {
       console.error('PDF Export Error:', err);
@@ -971,23 +1104,13 @@ export const Planner = () => {
     );
   }, []);
 
-  const addAvoidSuggestion = (suggestion: string) => {
-    setDetails(prev => {
-      const items = prev.avoidText.split(",").map(i => i.trim()).filter(i => i !== "");
-      if (items.includes(suggestion)) return prev;
-      const newText = items.length > 0 ? `${prev.avoidText}, ${suggestion}` : suggestion;
-      return { ...prev, avoidText: newText };
-    });
-  };
-
   useEffect(() => {
     if (details.destination.length > 1) {
-      const filtered = DESTINATIONS.filter(d => 
+      setSuggestions(DESTINATIONS.filter(d =>
         d.toLowerCase().includes(details.destination.toLowerCase())
-      );
-      setSuggestions(filtered);
+      ));
     } else {
-      setSuggestions([]);
+      setSuggestions(prev => prev.length === 0 ? prev : []);
     }
   }, [details.destination]);
 
@@ -1016,6 +1139,22 @@ export const Planner = () => {
 
         {/* Form Column */}
         <div className="bg-surface-container-lowest rounded-lg p-8 md:p-12 editorial-shadow">
+          {/* Collaboration Banner */}
+          {isCollaborating && partnerPrefs && (
+            <div className="mb-8 p-4 rounded-xl border" style={{ backgroundColor: "rgba(86,100,43,0.06)", borderColor: "rgba(86,100,43,0.18)" }}>
+              <div className="flex items-start gap-3">
+                <Users className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-primary uppercase tracking-wider mb-1">Co-Planning Mode</p>
+                  <p className="text-sm text-on-surface-variant leading-relaxed">
+                    Your travel partner is planning a trip to <strong className="text-on-surface">{partnerPrefs.details.destination}</strong>.
+                    {" "}Add your preferences below and the AI will weave a journey that works for both of you.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Progress Bar */}
           <div className="mb-12">
             <div className="flex justify-between items-center mb-4">
@@ -1382,28 +1521,92 @@ export const Planner = () => {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">HEALTH CONSIDERATIONS <span className="text-[10px] font-normal lowercase opacity-70">(optional)</span></h3>
-                <div className="relative">
-                  <textarea 
-                    id="healthNotes"
-                    className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors resize-none" 
-                    placeholder="e.g. heart condition, requires slow pace, low altitude, ground-floor rooms, easy clinic access..." 
-                    rows={4}
-                    maxLength={500}
-                    value={details.healthNotes}
-                    onChange={(e) => updateDetail("healthNotes", e.target.value)}
-                  ></textarea>
-                  <div className="absolute bottom-2 right-4 text-[10px] text-on-surface-variant opacity-50">
-                    {details.healthNotes.length} / 500
+              <div className="space-y-8">
+                {/* Mobility */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                    MOBILITY NEEDS <span className="text-[10px] font-normal lowercase opacity-70">(optional — select all that apply)</span>
+                  </h3>
+                  <div className="flex flex-wrap gap-3">
+                    {MOBILITY_OPTIONS.map((opt) => (
+                      <SelectionChip
+                        key={opt}
+                        label={opt}
+                        isSelected={selectedMobilityNeeds.includes(opt)}
+                        onClick={() => toggleItem(selectedMobilityNeeds, setSelectedMobilityNeeds, opt)}
+                        variant="small"
+                      />
+                    ))}
                   </div>
                 </div>
-                
-                <div className="p-4 rounded-lg border border-surface-container-highest flex items-center gap-3" style={{ backgroundColor: 'rgba(244, 244, 240, 0.5)' }}>
-                  <Lock className="w-4 h-4 text-on-surface-variant opacity-60" />
-                  <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                    Health information is used only to personalise your results and is never stored or logged.
+
+                {/* Sensory */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                    SENSORY & COGNITIVE NEEDS <span className="text-[10px] font-normal lowercase opacity-70">(optional)</span>
+                  </h3>
+                  <div className="flex flex-wrap gap-3">
+                    {SENSORY_OPTIONS.map((opt) => (
+                      <SelectionChip
+                        key={opt}
+                        label={opt}
+                        isSelected={selectedSensoryNeeds.includes(opt)}
+                        onClick={() => toggleItem(selectedSensoryNeeds, setSelectedSensoryNeeds, opt)}
+                        variant="small"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Additional notes */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                    ADDITIONAL HEALTH NOTES <span className="text-[10px] font-normal lowercase opacity-70">(optional)</span>
+                  </h3>
+                  <div className="relative">
+                    <textarea
+                      id="healthNotes"
+                      className="w-full bg-surface-container-low border-0 rounded-lg p-4 focus:bg-surface-container-highest focus:ring-0 transition-colors resize-none"
+                      placeholder="e.g. heart condition, low altitude required, easy clinic access..."
+                      rows={3}
+                      maxLength={300}
+                      value={details.healthNotes}
+                      onChange={(e) => updateDetail("healthNotes", e.target.value)}
+                    />
+                    <div className="absolute bottom-2 right-4 text-[10px] text-on-surface-variant opacity-50">
+                      {details.healthNotes.length} / 300
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-lg border border-surface-container-highest flex items-center gap-3" style={{ backgroundColor: "rgba(244, 244, 240, 0.5)" }}>
+                    <Lock className="w-4 h-4 text-on-surface-variant opacity-60 shrink-0" />
+                    <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                      Health information is used only to personalise your results and is never stored or logged.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Invite Collaborator */}
+                <div className="pt-2">
+                  <div className="relative py-4 mb-6">
+                    <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                      <div className="w-full border-t border-surface-container-highest"></div>
+                    </div>
+                    <div className="relative flex justify-center">
+                      <span className="bg-surface-container-lowest px-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Travelling with someone?</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-on-surface-variant mb-4 leading-relaxed">
+                    Share a personalised link with your travel partner. They fill in their own preferences, and the AI weaves a journey that works for both of you.
                   </p>
+                  <button
+                    type="button"
+                    onClick={handleInviteCollaborator}
+                    className="flex items-center gap-2 px-6 py-3 rounded-full border text-sm font-bold transition-all"
+                    style={{ borderColor: "rgba(86,100,43,0.3)", color: "#56642b", backgroundColor: "rgba(86,100,43,0.05)" }}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    {collabCopied ? "Link copied to clipboard!" : "Invite Travel Partner"}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1464,6 +1667,17 @@ export const Planner = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="mt-16 space-y-12"
               >
+                {/* Clear saved trip banner */}
+                <div className="flex justify-end mb-2">
+                  <button
+                    onClick={handleClearTrip}
+                    className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-on-surface transition-colors opacity-50 hover:opacity-100"
+                  >
+                    <X className="w-3 h-3" />
+                    Clear & plan new trip
+                  </button>
+                </div>
+
                 <div className="text-center space-y-4">
                   <h2 className="text-4xl font-headline font-bold text-primary">Your Bespoke Journey</h2>
                   <div className="flex items-center justify-center gap-2 text-primary font-bold uppercase tracking-widest text-xs">
@@ -1481,6 +1695,18 @@ export const Planner = () => {
                     "A journey of a thousand miles begins with a single step, and a well-crafted plan."
                   </p>
                 </div>
+
+                {/* Story Card */}
+                {itinerary && storyCard && (
+                  <StoryCard
+                    tagline={storyCard.tagline}
+                    narrative={storyCard.narrative}
+                    destination={itinerary.destination}
+                    startDate={itinerary.startDate}
+                    duration={details.duration}
+                    shareUrl={window.location.href}
+                  />
+                )}
 
                 {itinerary && (
                   <div className="space-y-12">
@@ -1665,21 +1891,59 @@ export const Planner = () => {
                   </div>
                 )}
 
-                <div className="flex justify-center pt-8 no-print" data-html2canvas-ignore="true">
-                  <button 
+                <div className="flex flex-wrap justify-center gap-3 pt-8 no-print" data-html2canvas-ignore="true">
+                  <button
                     onClick={handleExportPDF}
-                    className="flex items-center gap-2 px-8 py-3 rounded-full border text-on-surface-variant hover:bg-surface-container-highest transition-colors text-sm font-bold uppercase tracking-widest"
-                    style={{ borderColor: 'rgba(27, 28, 26, 0.2)' }}
+                    className="flex items-center gap-2 px-6 py-3 rounded-full border text-on-surface-variant hover:bg-surface-container-highest transition-colors text-sm font-bold uppercase tracking-widest"
+                    style={{ borderColor: "rgba(27, 28, 26, 0.2)" }}
                   >
                     <FileText className="w-4 h-4" />
-                    Export as PDF
+                    Export PDF
                   </button>
+
+                  <button
+                    onClick={() => {
+                      const url = window.location.href;
+                      navigator.clipboard.writeText(url).then(() => {
+                        setShareUrl(url);
+                        setTimeout(() => setShareUrl(null), 2500);
+                      });
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 rounded-full border text-on-surface-variant hover:bg-surface-container-highest transition-colors text-sm font-bold uppercase tracking-widest"
+                    style={{ borderColor: "rgba(27, 28, 26, 0.2)" }}
+                  >
+                    <Share2 className="w-4 h-4" />
+                    {shareUrl ? "Link copied!" : "Share Journey"}
+                  </button>
+
+                  {itinerary && (
+                    <button
+                      onClick={() => setIsLiveMode(true)}
+                      className="flex items-center gap-2 px-6 py-3 rounded-full text-on-primary text-sm font-bold uppercase tracking-widest transition-all"
+                      style={{ backgroundColor: "#56642b" }}
+                    >
+                      <Smartphone className="w-4 h-4" />
+                      Live Mode
+                    </button>
+                  )}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Live Trip Mode overlay */}
+      <AnimatePresence>
+        {isLiveMode && itinerary && (
+          <LiveTripMode
+            days={itinerary.days}
+            destination={itinerary.destination}
+            startDate={itinerary.startDate}
+            onClose={() => setIsLiveMode(false)}
+          />
+        )}
+      </AnimatePresence>
     </section>
   );
 };
